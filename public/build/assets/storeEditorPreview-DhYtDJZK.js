@@ -1,0 +1,1 @@
+const s="store-theme-preview",o="store-theme-preview-ack";function c(e,t){if(!(!e||typeof e.postMessage!="function"))try{e.postMessage({type:s,theme:t},"*")}catch{}}function p(e){if(!(!e?.source||typeof e.source.postMessage!="function"))try{e.source.postMessage({type:o},e.origin||"*")}catch{}}export{s as S,p as a,c as p};
