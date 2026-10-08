@@ -1,0 +1,1 @@
+import{A as t}from"./runtime-dom.esm-bundler-fdQoiohz.js";const c={__name:"ThemeToggler",props:{compact:{type:Boolean,default:!1}},setup(o){return t(()=>{document.documentElement.classList.remove("dark");try{localStorage.setItem("theme","light")}catch{}}),(e,a)=>null}};export{c as _};

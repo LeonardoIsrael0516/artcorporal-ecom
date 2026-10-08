@@ -48,6 +48,8 @@ const announcementText = computed(() => {
 
     return String(raw)
         .replace(/\{\{\s*free_shipping_min\s*\}\}/gi, fretePart)
+        // Remove qualquer placeholder residual (evita {{FREE_SHIPPING_MIN}} na faixa)
+        .replace(/\{\{[^}]*\}\}/g, '')
         .replace(/\s*·\s*·\s*/g, ' · ')
         .replace(/^\s*·\s*/, '')
         .replace(/\s*·\s*$/, '')
@@ -183,7 +185,7 @@ onUnmounted(() => {
         <!-- Announcement -->
         <div
             v-if="announcement?.enabled !== false && announcementText"
-            class="px-4 py-2 text-center text-[11px] font-semibold tracking-[0.18em] uppercase text-[var(--sf-secondary)]"
+            class="px-3 py-2 text-center text-[10px] font-semibold leading-snug tracking-[0.12em] uppercase text-[var(--sf-secondary)] sm:px-4 sm:text-[11px] sm:tracking-[0.18em]"
             style="background: var(--sf-gold-gradient)"
             :style="announcementStyle"
         >
@@ -465,6 +467,8 @@ onUnmounted(() => {
 .sf-root {
     font-family: var(--sf-font-body);
     --color-primary: var(--sf-secondary);
+    overflow-x: clip;
+    max-width: 100vw;
 }
 
 .sf-root h1,
@@ -638,9 +642,15 @@ onUnmounted(() => {
 .sf-hero-placeholder::before {
     content: '';
     position: absolute;
-    inset: 18px;
+    inset: 12px;
     border: 1px solid color-mix(in srgb, var(--sf-primary) 30%, transparent);
     pointer-events: none;
+}
+
+@media (min-width: 768px) {
+    .sf-hero-placeholder::before {
+        inset: 18px;
+    }
 }
 
 .sf-nav-link {

@@ -91,14 +91,13 @@ function mobileSrc(slide) {
 <template>
     <section
         v-if="slides.length"
-        class="relative w-full overflow-hidden bg-[var(--sf-secondary)]"
+        class="relative w-full max-w-[100vw] overflow-hidden bg-[var(--sf-secondary)]"
         @mouseenter="stopAutoplay"
         @mouseleave="startAutoplay"
         @focusin="stopAutoplay"
         @focusout="startAutoplay"
     >
-        <!-- Mobile: retrato · Desktop: 16/7 -->
-        <div class="relative aspect-[3/4] min-h-[420px] max-h-[78vh] sm:aspect-[4/5] sm:min-h-[480px] md:aspect-[16/7] md:min-h-[360px] md:max-h-none">
+        <div class="relative aspect-[3/4] min-h-[380px] max-h-[78vh] w-full sm:aspect-[4/5] sm:min-h-[480px] md:aspect-[16/7] md:min-h-[360px] md:max-h-none">
             <template v-for="(slide, i) in slides" :key="i">
                 <div
                     class="absolute inset-0 transition-opacity duration-700 ease-out"
@@ -134,7 +133,7 @@ function mobileSrc(slide) {
                         "
                     >
                         <div
-                            class="mx-auto w-full max-w-[1360px] px-5 pb-14 pt-10 text-[var(--sf-header-text)] sm:px-6 md:px-8 md:py-10"
+                            class="box-border w-full max-w-[1360px] px-4 pb-12 pt-8 text-[var(--sf-header-text)] sm:px-6 sm:pb-14 sm:pt-10 md:mx-auto md:px-8 md:py-10"
                             :class="desktopSrc(slide) || mobileSrc(slide) ? '' : 'text-center'"
                         >
                             <p class="sf-eyebrow !text-[var(--sf-accent-light)]">
@@ -142,11 +141,11 @@ function mobileSrc(slide) {
                             </p>
                             <h2
                                 v-if="slide.title"
-                                class="mt-2 break-words text-[1.85rem] leading-[1.12] sm:text-4xl md:mt-3 md:text-6xl"
+                                class="mt-2 w-full max-w-full break-words text-[1.65rem] leading-[1.15] sm:text-[1.85rem] sm:leading-[1.12] md:mt-3 md:text-6xl"
                                 :class="
                                     desktopSrc(slide) || mobileSrc(slide)
-                                        ? 'max-w-[18rem] sm:max-w-md md:max-w-2xl'
-                                        : 'sf-gold-text mx-auto max-w-3xl'
+                                        ? 'md:max-w-2xl'
+                                        : 'sf-gold-text mx-auto md:max-w-3xl'
                                 "
                             >
                                 {{ slide.title }}
@@ -158,7 +157,7 @@ function mobileSrc(slide) {
                             />
                             <p
                                 v-if="slide.subtitle"
-                                class="mt-3 max-w-[18rem] text-[13px] leading-relaxed tracking-wide text-[var(--sf-header-text)]/85 sm:max-w-md sm:text-sm md:mt-5 md:max-w-xl md:text-base"
+                                class="mt-3 w-full max-w-full text-[13px] leading-relaxed tracking-wide text-[var(--sf-header-text)]/85 sm:text-sm md:mt-5 md:max-w-xl md:text-base"
                                 :class="desktopSrc(slide) || mobileSrc(slide) ? '' : 'mx-auto'"
                             >
                                 {{ slide.subtitle }}
@@ -166,7 +165,7 @@ function mobileSrc(slide) {
                             <Link
                                 v-if="slide.cta_label && slide.cta_url"
                                 :href="slide.cta_url"
-                                class="sf-btn-gold mt-6 inline-flex px-7 py-3 text-[10px] font-semibold tracking-[0.22em] uppercase md:mt-8 md:px-9 md:py-3.5 md:text-[11px] md:tracking-[0.25em]"
+                                class="sf-btn-gold mt-6 inline-flex max-w-full px-6 py-3 text-[10px] font-semibold tracking-[0.18em] uppercase sm:px-7 sm:tracking-[0.22em] md:mt-8 md:px-9 md:py-3.5 md:text-[11px] md:tracking-[0.25em]"
                             >
                                 {{ slide.cta_label }}
                             </Link>
