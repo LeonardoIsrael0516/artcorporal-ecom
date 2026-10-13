@@ -8,9 +8,6 @@ import BetaBadge from '@/components/ui/BetaBadge.vue';
 import HorizontalScrollTabs from '@/components/ui/HorizontalScrollTabs.vue';
 import Toggle from '@/components/ui/Toggle.vue';
 import Checkbox from '@/components/ui/Checkbox.vue';
-import GatewaySelect from '@/components/ui/GatewaySelect.vue';
-import GatewayRedundancySidebar from '@/components/produtos/GatewayRedundancySidebar.vue';
-import PixParceladoRulesSidebar from '@/components/produtos/PixParceladoRulesSidebar.vue';
 import PluginSlotHost from '@/components/plugins/PluginSlotHost.vue';
 import PluginRenderZone from '@/components/plugins/PluginRenderZone.vue';
 import {
@@ -45,6 +42,7 @@ import axios from 'axios';
 import EmailTemplatePreview from '@/components/produtos/EmailTemplatePreview.vue';
 import ProductConversionPixelsInfo from '@/components/produtos/ProductConversionPixelsInfo.vue';
 import PhysicalProductFields from '@/components/produtos/PhysicalProductFields.vue';
+import { normalizeImageFile } from '@/utils/normalizeImageFile';
 
 function getCsrfToken() {
     const match = document.cookie.match(/XSRF-TOKEN=([^;]+)/);
@@ -1392,9 +1390,27 @@ function editCheckoutUrl(item) {
 
 const showCreateCheckoutModal = ref(false);
 
-function onFileChange(e) {
-    const file = e.target.files?.[0];
-    form.image = file || null;
+const imageConverting = ref(false);
+const imageConvertError = ref('');
+
+async function onFileChange(e) {
+    const input = e.target;
+    const file = input?.files?.[0];
+    imageConvertError.value = '';
+    if (!file) {
+        form.image = null;
+        return;
+    }
+    imageConverting.value = true;
+    try {
+        form.image = await normalizeImageFile(file);
+    } catch (err) {
+        form.image = null;
+        imageConvertError.value = 'Não foi possível converter esta imagem HEIC. Tente JPG ou PNG.';
+        if (input) input.value = '';
+    } finally {
+        imageConverting.value = false;
+    }
 }
 
 const inputClass =
@@ -1490,7 +1506,7 @@ const typeIcons = {
 };
 
 function submit() {
-    if (smsValidationError.value) {
+    if (smsValidationError.value || imageConverting.value) {
         return;
     }
     const baseUrl = `/produtos/${props.produto.id}`;
@@ -1806,9 +1822,10 @@ function submit() {
                             </div>
                             <div class="flex flex-col items-start lg:pt-0">
                                 <label class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-300">Imagem do produto</label>
-                                <p class="mb-2 text-xs text-zinc-500 dark:text-zinc-400">1:1, ex.: 400×400 px.</p>
+                                <p class="mb-2 text-xs text-zinc-500 dark:text-zinc-400">1:1, ex.: 400×400 px. Aceita JPG, PNG, WEBP e HEIC.</p>
                                 <label
                                     class="relative flex h-28 w-28 shrink-0 cursor-pointer flex-col items-center justify-center overflow-hidden rounded-xl border-2 border-dashed border-zinc-200 bg-zinc-50/80 transition hover:border-[var(--color-primary)]/50 hover:bg-[var(--color-primary)]/5 dark:border-zinc-600 dark:bg-zinc-800/80 dark:hover:border-[var(--color-primary)]/40 dark:hover:bg-[var(--color-primary)]/10"
+                                    :class="imageConverting ? 'pointer-events-none opacity-60' : ''"
                                 >
                                     <template v-if="currentImageUrl">
                                         <img :src="currentImageUrl" alt="Preview" class="h-full w-full object-cover" />
@@ -1817,11 +1834,14 @@ function submit() {
                                         </span>
                                     </template>
                                     <template v-else>
-                                        <ImageIcon class="h-8 w-8 text-zinc-400 dark:text-zinc-500" />
-                                        <span class="mt-1 text-center text-xs font-medium text-zinc-600 dark:text-zinc-400">{{ form.image?.name || 'Enviar' }}</span>
+                                        <Loader2 v-if="imageConverting" class="h-8 w-8 animate-spin text-zinc-400" />
+                                        <ImageIcon v-else class="h-8 w-8 text-zinc-400 dark:text-zinc-500" />
+                                        <span class="mt-1 text-center text-xs font-medium text-zinc-600 dark:text-zinc-400">{{ imageConverting ? 'Convertendo…' : (form.image?.name || 'Enviar') }}</span>
                                     </template>
-                                    <input type="file" accept="image/*,.heic,.heif,image/heic,image/heif" class="hidden" @change="onFileChange" />
+                                    <input type="file" accept="image/*,.heic,.heif,image/heic,image/heif" class="hidden" :disabled="imageConverting" @change="onFileChange" />
                                 </label>
+                                <p v-if="imageConvertError" class="mt-1.5 text-sm text-red-600 dark:text-red-400">{{ imageConvertError }}</p>
+                                <p v-if="form.errors.image" class="mt-1.5 text-sm text-red-600 dark:text-red-400">{{ form.errors.image }}</p>
                             </div>
                         </div>
                     </div>
@@ -1926,440 +1946,7 @@ function submit() {
         <!-- Aba Configurações -->
         <template v-if="currentTab === 'configuracoes'">
             <form class="w-full space-y-8" @submit.prevent="submit">
-                <!-- Métodos de pagamento -->
-                <section class="panel-table">
-                    <div class="border-b border-zinc-200/80 px-6 py-4 dark:border-zinc-700/80">
-                        <h2 class="text-base font-semibold text-zinc-900 dark:text-white">Métodos de pagamento</h2>
-                        <p class="mt-0.5 text-sm text-zinc-500 dark:text-zinc-400">
-                            Selecione o gateway para cada forma de pagamento no checkout.
-                        </p>
-                    </div>
-                    <div class="p-6">
-                        <div class="grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
-                            <!-- PIX -->
-                            <div class="panel-card-md">
-                                <div class="flex flex-col gap-3">
-                                    <div class="flex items-center gap-3">
-                                        <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-white p-2 shadow-sm dark:bg-zinc-700/50">
-                                            <img src="/images/payment-methods/pix.svg" alt="PIX" class="h-7 w-7 object-contain" @error="($e) => $e.target && ($e.target.style.display = 'none')" />
-                                        </div>
-                                        <div>
-                                            <p class="font-semibold text-zinc-900 dark:text-white">PIX</p>
-                                            <p class="text-xs text-zinc-500 dark:text-zinc-400">Pagamento instantâneo</p>
-                                        </div>
-                                    </div>
-                                    <GatewaySelect
-                                        v-model="form.payment_gateways.pix"
-                                        :options="gatewayOptions('pix')"
-                                        placeholder="Nenhum"
-                                        label="Gateway PIX"
-                                    />
-                                    <button
-                                        v-if="canShowRedundancy(form.payment_gateways.pix)"
-                                        type="button"
-                                        class="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 px-3 py-2 text-sm font-medium text-zinc-700 transition hover:border-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 hover:text-[var(--color-primary)] dark:border-zinc-600 dark:text-zinc-300 dark:hover:border-[var(--color-primary)] dark:hover:bg-[var(--color-primary)]/20"
-                                        @click="openRedundancySidebar('pix')"
-                                    >
-                                        <Layers class="h-4 w-4" />
-                                        Redundância
-                                    </button>
-                                    <p v-if="gateways_by_method.pix.length === 0" class="text-xs text-zinc-500 dark:text-zinc-400">
-                                        <Link href="/integracoes?tab=gateways" class="text-[var(--color-primary)] hover:underline">Conectar gateway</Link>
-                                    </p>
-                                </div>
-                            </div>
-                            <!-- PIX Parcelado (somente pagamento único) -->
-                            <div
-                                v-if="form.billing_type === 'one_time'"
-                                class="panel-card-md"
-                            >
-                                <div class="flex flex-col gap-3">
-                                    <div class="flex items-center gap-3">
-                                        <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-white p-2 shadow-sm dark:bg-zinc-700/50">
-                                            <img src="/images/payment-methods/pix.svg" alt="PIX Parcelado" class="h-7 w-7 object-contain" />
-                                        </div>
-                                        <div>
-                                            <p class="font-semibold text-zinc-900 dark:text-white">PIX Parcelado</p>
-                                            <p class="text-xs text-zinc-500 dark:text-zinc-400">Entrada + parcelas (CajuPay)</p>
-                                            <span class="mt-1 inline-flex rounded-md bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">BRL · pagamento único</span>
-                                        </div>
-                                    </div>
-                                    <GatewaySelect
-                                        v-model="form.payment_gateways.pix_parcelado"
-                                        :options="gatewayOptions('pix_parcelado')"
-                                        placeholder="Nenhum"
-                                        label="Gateway PIX Parcelado"
-                                    />
-                                    <button
-                                        v-if="form.payment_gateways.pix_parcelado === 'cajupay'"
-                                        type="button"
-                                        class="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 px-3 py-2 text-sm font-medium text-zinc-700 transition hover:border-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 hover:text-[var(--color-primary)] dark:border-zinc-600 dark:text-zinc-300"
-                                        @click="pixParceladoRulesSidebarOpen = true"
-                                    >
-                                        <SlidersHorizontal class="h-4 w-4" />
-                                        Definir regras
-                                    </button>
-                                    <button
-                                        v-if="canShowRedundancy(form.payment_gateways.pix_parcelado)"
-                                        type="button"
-                                        class="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 px-3 py-2 text-sm font-medium text-zinc-700 transition hover:border-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 hover:text-[var(--color-primary)] dark:border-zinc-600 dark:text-zinc-300"
-                                        @click="openRedundancySidebar('pix_parcelado')"
-                                    >
-                                        <Layers class="h-4 w-4" />
-                                        Redundância
-                                    </button>
-                                    <p v-if="cajupayParceladoNotEnrolled" class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
-                                        Aceite o contrato PIX Parcelado na
-                                        <Link href="/integracoes?tab=gateways&gateway=cajupay" class="font-medium underline">configuração CajuPay</Link>
-                                        antes de usar no checkout.
-                                    </p>
-                                    <p v-if="(gateways_by_method.pix_parcelado || []).length === 0" class="text-xs text-zinc-500 dark:text-zinc-400">
-                                        <Link href="/integracoes?tab=gateways" class="text-[var(--color-primary)] hover:underline">Conectar CajuPay</Link>
-                                    </p>
-                                </div>
-                            </div>
-                            <!-- Cartão -->
-                            <div class="panel-card-md">
-                                <div class="flex flex-col gap-3">
-                                    <div class="flex items-center gap-3">
-                                        <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-white p-2 shadow-sm dark:bg-zinc-700/50">
-                                            <img src="/images/payment-methods/card.png" alt="Cartão" class="h-7 w-7 object-contain" @error="($e) => $e.target && ($e.target.style.display = 'none')" />
-                                        </div>
-                                        <div>
-                                            <p class="font-semibold text-zinc-900 dark:text-white">Cartão</p>
-                                            <p class="text-xs text-zinc-500 dark:text-zinc-400">Crédito e débito</p>
-                                        </div>
-                                    </div>
-                                    <GatewaySelect
-                                        v-model="form.payment_gateways.card"
-                                        :options="gatewayOptions('card')"
-                                        placeholder="Nenhum"
-                                        label="Gateway Cartão"
-                                    />
-                                    <button
-                                        v-if="canShowRedundancy(form.payment_gateways.card)"
-                                        type="button"
-                                        class="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 px-3 py-2 text-sm font-medium text-zinc-700 transition hover:border-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 hover:text-[var(--color-primary)] dark:border-zinc-600 dark:text-zinc-300 dark:hover:border-[var(--color-primary)] dark:hover:bg-[var(--color-primary)]/20"
-                                        @click="openRedundancySidebar('card')"
-                                    >
-                                        <Layers class="h-4 w-4" />
-                                        Redundância
-                                    </button>
-                                    <button
-                                        v-if="isBrBillingGateway(form.payment_gateways.card)"
-                                        type="button"
-                                        class="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 px-3 py-2 text-sm font-medium text-zinc-700 transition hover:border-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 hover:text-[var(--color-primary)] dark:border-zinc-600 dark:text-zinc-300 dark:hover:border-[var(--color-primary)] dark:hover:bg-[var(--color-primary)]/20"
-                                        @click="pagarmeBillingSidebarOpen = true"
-                                    >
-                                        <MapPin class="h-4 w-4" />
-                                        Configurar endereço (checkout)
-                                    </button>
-                                    <p v-if="gateways_by_method.card.length === 0" class="text-xs text-zinc-500 dark:text-zinc-400">
-                                        <Link href="/integracoes?tab=gateways" class="text-[var(--color-primary)] hover:underline">Conectar gateway</Link>
-                                    </p>
-                                    <template v-if="supportsCardInstallments(form.payment_gateways.card)">
-                                        <div class="mt-3 space-y-3 border-t border-zinc-200/80 pt-3 dark:border-zinc-600/80">
-                                            <div class="flex items-center justify-between rounded-xl border border-zinc-100 bg-white px-4 py-3 dark:border-zinc-700 dark:bg-zinc-800/50">
-                                                <div class="min-w-0">
-                                                    <p class="text-sm font-medium text-zinc-700 dark:text-zinc-300">Permitir parcelamento</p>
-                                                    <p class="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
-                                                        Opcional. Se desligado, o cartão cobra só à vista (1x). Com {{ cardInstallmentsGatewayLabel(form.payment_gateways.card) }}, o seletor de parcelas aparece no checkout
-                                                        <template v-if="form.payment_gateways.card === 'cajupay'"> (dentro do SDK)</template>.
-                                                    </p>
-                                                </div>
-                                                <Toggle v-model="form.card_installments.enabled" class="shrink-0" />
-                                            </div>
-                                            <div v-if="form.card_installments.enabled" class="rounded-xl border border-zinc-100 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-800/50">
-                                                <label for="card-installments-max" class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-300">Até quantas parcelas</label>
-                                                <select
-                                                    id="card-installments-max"
-                                                    v-model.number="form.card_installments.max"
-                                                    class="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2.5 text-sm text-zinc-900 shadow-sm focus:border-[var(--color-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)] dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-100"
-                                                >
-                                                    <option v-for="n in maxAllowedInstallments" :key="n" :value="n">{{ n }}x</option>
-                                                </select>
-                                                <p class="mt-1.5 text-xs text-zinc-500 dark:text-zinc-400">Com o preço de R$ {{ priceNum.toFixed(2) }}, até {{ maxAllowedInstallments }}x (mín. R$ {{ MIN_PARCELA_BRL }},00 por parcela).</p>
-                                            </div>
-                                        </div>
-                                    </template>
-                                    <template v-if="form.payment_gateways.card === 'cajupay'">
-                                        <div class="mt-3 space-y-3 border-t border-zinc-200/80 pt-3 dark:border-zinc-600/80">
-                                            <div class="flex items-center justify-between rounded-xl border border-zinc-100 bg-white px-4 py-3 dark:border-zinc-700 dark:bg-zinc-800/50">
-                                                <div class="min-w-0">
-                                                    <p class="text-sm font-medium text-zinc-700 dark:text-zinc-300">Exigir 3DS (Cartão Brasil)</p>
-                                                    <p class="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
-                                                        Só surte efeito se a conta CajuPay estiver em modo 3DS opcional. O comprador não vê essa opção — o SDK autentica sozinho quando exigido.
-                                                    </p>
-                                                </div>
-                                                <Toggle v-model="form.cajupay_card.require_threeds" class="shrink-0" />
-                                            </div>
-                                        </div>
-                                    </template>
-                                    <template v-if="form.payment_gateways.card === 'stripe'">
-                                        <div class="mt-3 space-y-3 border-t border-zinc-200/80 pt-3 dark:border-zinc-600/80">
-                                            <div class="flex items-center justify-between rounded-xl border border-zinc-100 bg-white px-4 py-3 dark:border-zinc-700 dark:bg-zinc-800/50">
-                                                <div class="min-w-0">
-                                                    <p class="text-sm font-medium text-zinc-700 dark:text-zinc-300">Usar Stripe Link</p>
-                                                    <p class="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">Permitir que o cliente use Link para preencher dados do cartão (Stripe)</p>
-                                                </div>
-                                                <Toggle v-model="form.stripe_link_enabled" class="shrink-0" />
-                                            </div>
-                                        </div>
-                                    </template>
-                                </div>
-                            </div>
-                            <!-- Boleto -->
-                            <div class="panel-card-md">
-                                <div class="flex flex-col gap-3">
-                                    <div class="flex items-center gap-3">
-                                        <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-white p-2 shadow-sm dark:bg-zinc-700/50">
-                                            <img src="/images/payment-methods/boleto.png" alt="Boleto" class="h-7 w-7 object-contain" @error="($e) => $e.target && ($e.target.style.display = 'none')" />
-                                        </div>
-                                        <div>
-                                            <p class="font-semibold text-zinc-900 dark:text-white">Boleto</p>
-                                            <p class="text-xs text-zinc-500 dark:text-zinc-400">Pagamento bancário</p>
-                                        </div>
-                                    </div>
-                                    <GatewaySelect
-                                        v-model="form.payment_gateways.boleto"
-                                        :options="gatewayOptions('boleto')"
-                                        placeholder="Nenhum"
-                                        label="Gateway Boleto"
-                                    />
-                                    <button
-                                        v-if="canShowRedundancy(form.payment_gateways.boleto)"
-                                        type="button"
-                                        class="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 px-3 py-2 text-sm font-medium text-zinc-700 transition hover:border-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 hover:text-[var(--color-primary)] dark:border-zinc-600 dark:text-zinc-300 dark:hover:border-[var(--color-primary)] dark:hover:bg-[var(--color-primary)]/20"
-                                        @click="openRedundancySidebar('boleto')"
-                                    >
-                                        <Layers class="h-4 w-4" />
-                                        Redundância
-                                    </button>
-                                    <button
-                                        v-if="isBrBillingGateway(form.payment_gateways.boleto)"
-                                        type="button"
-                                        class="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 px-3 py-2 text-sm font-medium text-zinc-700 transition hover:border-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 hover:text-[var(--color-primary)] dark:border-zinc-600 dark:text-zinc-300 dark:hover:border-[var(--color-primary)] dark:hover:bg-[var(--color-primary)]/20"
-                                        @click="pagarmeBillingSidebarOpen = true"
-                                    >
-                                        <MapPin class="h-4 w-4" />
-                                        Configurar endereço (checkout)
-                                    </button>
-                                    <p v-if="gateways_by_method.boleto.length === 0" class="text-xs text-zinc-500 dark:text-zinc-400">
-                                        <Link href="/integracoes?tab=gateways" class="text-[var(--color-primary)] hover:underline">Conectar gateway</Link>
-                                    </p>
-                                </div>
-                            </div>
-                            <!-- Apple Pay -->
-                            <div class="panel-card-md">
-                                <div class="flex flex-col gap-3">
-                                    <div class="flex items-center gap-3">
-                                        <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-black p-2 shadow-sm">
-                                            <svg viewBox="0 0 24 24" class="h-5 w-5 text-white" fill="currentColor" aria-hidden="true">
-                                                <path d="M17.564 12.42c-.02-2.11 1.72-3.13 1.8-3.18-0.98-1.43-2.5-1.62-3.04-1.64-1.29-.13-2.52.76-3.17.76-.66 0-1.66-.74-2.74-.72-1.41.02-2.71.82-3.43 2.08-1.46 2.54-.37 6.3 1.06 8.36.7 1.01 1.53 2.14 2.62 2.1 1.05-.04 1.45-.68 2.72-.68 1.27 0 1.62.68 2.73.66 1.13-.02 1.85-1.03 2.54-2.04.8-1.17 1.13-2.31 1.15-2.37-.03-.01-2.21-.85-2.24-3.33zM15.43 5.36c.58-.7.97-1.67.86-2.64-.84.03-1.85.56-2.45 1.26-.54.62-1.01 1.61-.88 2.56.93.07 1.89-.47 2.47-1.18z" />
-                                            </svg>
-                                        </div>
-                                        <div class="min-w-0 flex-1">
-                                            <p class="font-semibold text-zinc-900 dark:text-white">Apple Pay</p>
-                                            <p class="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">Carteira digital</p>
-                                            <span
-                                                class="mt-1.5 inline-flex max-w-full items-center rounded-md border border-zinc-200/90 bg-white px-2 py-0.5 text-[11px] font-medium leading-tight text-zinc-600 shadow-sm dark:border-zinc-600 dark:bg-zinc-800/90 dark:text-zinc-300"
-                                                title="No checkout público, o botão Apple Pay só é exibido em iPhone e iPad."
-                                            >
-                                                Somente dispositivos iOS
-                                            </span>
-                                        </div>
-                                    </div>
-                                    <GatewaySelect
-                                        v-model="form.payment_gateways.apple_pay"
-                                        :options="gatewayOptions('apple_pay')"
-                                        placeholder="Nenhum"
-                                        label="Gateway Apple Pay"
-                                    />
-                                    <button
-                                        v-if="canShowRedundancy(form.payment_gateways.apple_pay)"
-                                        type="button"
-                                        class="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 px-3 py-2 text-sm font-medium text-zinc-700 transition hover:border-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 hover:text-[var(--color-primary)] dark:border-zinc-600 dark:text-zinc-300 dark:hover:border-[var(--color-primary)] dark:hover:bg-[var(--color-primary)]/20"
-                                        @click="openRedundancySidebar('apple_pay')"
-                                    >
-                                        <Layers class="h-4 w-4" />
-                                        Redundância
-                                    </button>
-                                    <p v-if="(gateways_by_method.apple_pay || []).length === 0" class="text-xs text-zinc-500 dark:text-zinc-400">
-                                        <Link href="/integracoes?tab=gateways" class="text-[var(--color-primary)] hover:underline">Conectar gateway compatível (CajuPay)</Link>
-                                    </p>
-                                </div>
-                            </div>
-                            <!-- Google Pay -->
-                            <div class="panel-card-md">
-                                <div class="flex flex-col gap-3">
-                                    <div class="flex items-center gap-3">
-                                        <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-white p-2 shadow-sm">
-                                            <svg viewBox="0 0 24 24" class="h-6 w-6" aria-hidden="true">
-                                                <path fill="#4285F4" d="M21.6 12.227c0-.71-.064-1.391-.182-2.045H12v3.873h5.39a4.61 4.61 0 0 1-2 3.025v2.512h3.235c1.893-1.745 2.975-4.314 2.975-7.365z" />
-                                                <path fill="#34A853" d="M12 22c2.7 0 4.964-.895 6.625-2.408l-3.235-2.512c-.896.6-2.041.955-3.39.955-2.605 0-4.81-1.76-5.598-4.124H3.057v2.59A9.997 9.997 0 0 0 12 22z" />
-                                                <path fill="#FBBC05" d="M6.402 13.911A5.99 5.99 0 0 1 6.09 12c0-.664.114-1.31.312-1.911V7.5H3.057A9.997 9.997 0 0 0 2 12c0 1.614.385 3.14 1.057 4.5l3.345-2.589z" />
-                                                <path fill="#EA4335" d="M12 5.977c1.468 0 2.785.504 3.823 1.494l2.866-2.866C16.96 3.092 14.7 2.182 12 2.182A9.997 9.997 0 0 0 3.057 7.5l3.345 2.589c.788-2.364 2.993-4.112 5.598-4.112z" />
-                                            </svg>
-                                        </div>
-                                        <div class="min-w-0 flex-1">
-                                            <p class="font-semibold text-zinc-900 dark:text-white">Google Pay</p>
-                                            <p class="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">Carteira digital</p>
-                                            <span
-                                                class="mt-1.5 inline-flex max-w-full items-center rounded-md border border-zinc-200/90 bg-white px-2 py-0.5 text-[11px] font-medium leading-tight text-zinc-600 shadow-sm dark:border-zinc-600 dark:bg-zinc-800/90 dark:text-zinc-300"
-                                                title="No checkout público, o Google Pay não é exibido em iPhone/iPad; apenas em Android ou desktop."
-                                            >
-                                                Somente Android ou desktop
-                                            </span>
-                                        </div>
-                                    </div>
-                                    <GatewaySelect
-                                        v-model="form.payment_gateways.google_pay"
-                                        :options="gatewayOptions('google_pay')"
-                                        placeholder="Nenhum"
-                                        label="Gateway Google Pay"
-                                    />
-                                    <button
-                                        v-if="canShowRedundancy(form.payment_gateways.google_pay)"
-                                        type="button"
-                                        class="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 px-3 py-2 text-sm font-medium text-zinc-700 transition hover:border-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 hover:text-[var(--color-primary)] dark:border-zinc-600 dark:text-zinc-300 dark:hover:border-[var(--color-primary)] dark:hover:bg-[var(--color-primary)]/20"
-                                        @click="openRedundancySidebar('google_pay')"
-                                    >
-                                        <Layers class="h-4 w-4" />
-                                        Redundância
-                                    </button>
-                                    <p v-if="(gateways_by_method.google_pay || []).length === 0" class="text-xs text-zinc-500 dark:text-zinc-400">
-                                        <Link href="/integracoes?tab=gateways" class="text-[var(--color-primary)] hover:underline">Conectar gateway compatível (CajuPay)</Link>
-                                    </p>
-                                </div>
-                            </div>
-                            <!-- PayPal -->
-                            <div class="panel-card-md">
-                                <div class="flex flex-col gap-3">
-                                    <div class="flex items-center gap-3">
-                                        <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-white p-2 shadow-sm dark:bg-zinc-700/50">
-                                            <img src="/images/gateways/paypal.png" alt="PayPal" class="h-7 w-7 object-contain" @error="($e) => $e.target && ($e.target.style.display = 'none')" />
-                                        </div>
-                                        <div class="min-w-0 flex-1">
-                                            <p class="font-semibold text-zinc-900 dark:text-white">PayPal</p>
-                                            <p class="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">Carteira / cartão via PayPal</p>
-                                        </div>
-                                    </div>
-                                    <GatewaySelect
-                                        v-model="form.payment_gateways.paypal"
-                                        :options="gatewayOptions('paypal')"
-                                        placeholder="Nenhum"
-                                        label="Gateway PayPal"
-                                    />
-                                    <template v-if="form.payment_gateways.paypal">
-                                        <div>
-                                            <label class="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300">Exibir no checkout como</label>
-                                            <select
-                                                v-model="form.payment_gateways.paypal_display_as"
-                                                class="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 shadow-sm focus:border-[var(--color-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)] dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-                                            >
-                                                <option value="paypal">PayPal</option>
-                                                <option value="card">Cartão</option>
-                                            </select>
-                                            <p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-                                                “Cartão” usa o mesmo fluxo PayPal com rótulo de cartão. Se já houver outro Cartão, aparece como “Cartão PayPal”.
-                                            </p>
-                                        </div>
-                                        <label class="flex cursor-pointer items-start gap-2.5 rounded-lg border border-zinc-200 px-3 py-2.5 dark:border-zinc-600">
-                                            <input
-                                                v-model="form.payment_gateways.paypal_show_wallet"
-                                                type="checkbox"
-                                                class="mt-0.5 h-4 w-4 rounded border-zinc-300 text-[var(--color-primary)] focus:ring-[var(--color-primary)]"
-                                            />
-                                            <span class="min-w-0">
-                                                <span class="block text-sm font-medium text-zinc-800 dark:text-zinc-200">Mostrar também botão da conta PayPal</span>
-                                                <span class="mt-0.5 block text-xs text-zinc-500 dark:text-zinc-400">Abre o popup da carteira PayPal, além do pagamento com cartão.</span>
-                                            </span>
-                                        </label>
-                                    </template>
-                                    <button
-                                        v-if="canShowRedundancy(form.payment_gateways.paypal)"
-                                        type="button"
-                                        class="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 px-3 py-2 text-sm font-medium text-zinc-700 transition hover:border-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 hover:text-[var(--color-primary)] dark:border-zinc-600 dark:text-zinc-300 dark:hover:border-[var(--color-primary)] dark:hover:bg-[var(--color-primary)]/20"
-                                        @click="openRedundancySidebar('paypal')"
-                                    >
-                                        <Layers class="h-4 w-4" />
-                                        Redundância
-                                    </button>
-                                    <p v-if="(gateways_by_method.paypal || []).length === 0" class="text-xs text-zinc-500 dark:text-zinc-400">
-                                        <Link href="/integracoes?tab=gateways" class="text-[var(--color-primary)] hover:underline">Conectar PayPal</Link>
-                                    </p>
-                                </div>
-                            </div>
-                            <!-- PIX automático (somente Assinatura) -->
-                            <div
-                                v-if="form.billing_type === 'subscription'"
-                                class="panel-card-md"
-                            >
-                                <div class="flex flex-col gap-3">
-                                    <div class="flex items-center gap-3">
-                                        <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-white p-2 shadow-sm dark:bg-zinc-700/50">
-                                            <img src="/images/gateways/pix-automatico.png" alt="PIX automático" class="h-7 w-7 object-contain" @error="($e) => $e.target && ($e.target.style.display = 'none')" />
-                                        </div>
-                                        <div>
-                                            <p class="font-semibold text-zinc-900 dark:text-white">PIX automático</p>
-                                            <p class="text-xs text-zinc-500 dark:text-zinc-400">Renovação automática (assinaturas)</p>
-                                        </div>
-                                    </div>
-                                    <GatewaySelect
-                                        v-model="form.payment_gateways.pix_auto"
-                                        :options="gatewayOptions('pix_auto')"
-                                        placeholder="Nenhum"
-                                        label="Gateway PIX automático"
-                                    />
-                                    <button
-                                        v-if="canShowRedundancy(form.payment_gateways.pix_auto)"
-                                        type="button"
-                                        class="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 px-3 py-2 text-sm font-medium text-zinc-700 transition hover:border-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 hover:text-[var(--color-primary)] dark:border-zinc-600 dark:text-zinc-300 dark:hover:border-[var(--color-primary)] dark:hover:bg-[var(--color-primary)]/20"
-                                        @click="openRedundancySidebar('pix_auto')"
-                                    >
-                                        <Layers class="h-4 w-4" />
-                                        Redundância
-                                    </button>
-                                    <p v-if="(gateways_by_method.pix_auto || []).length === 0" class="text-xs text-zinc-500 dark:text-zinc-400">
-                                        <Link href="/integracoes?tab=gateways" class="text-[var(--color-primary)] hover:underline">Conectar gateway Efí</Link>
-                                    </p>
-                                </div>
-                            </div>
-                            <!-- Criptomoeda -->
-                            <div class="panel-card-md">
-                                <div class="flex flex-col gap-3">
-                                    <div class="flex items-center gap-3">
-                                        <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-white p-2 shadow-sm dark:bg-zinc-700/50">
-                                            <img src="/images/payment-methods/cripto.png" alt="Criptomoeda" class="h-7 w-7 object-contain" @error="($e) => $e.target && ($e.target.style.display = 'none')" />
-                                        </div>
-                                        <div>
-                                            <p class="font-semibold text-zinc-900 dark:text-white">Criptomoeda</p>
-                                            <p class="text-xs text-zinc-500 dark:text-zinc-400">Bitcoin e outras</p>
-                                        </div>
-                                    </div>
-                                    <GatewaySelect
-                                        v-model="form.payment_gateways.crypto"
-                                        :options="gatewayOptions('crypto')"
-                                        placeholder="Nenhum"
-                                        label="Gateway Criptomoeda"
-                                    />
-                                    <button
-                                        v-if="canShowRedundancy(form.payment_gateways.crypto)"
-                                        type="button"
-                                        class="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 px-3 py-2 text-sm font-medium text-zinc-700 transition hover:border-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 hover:text-[var(--color-primary)] dark:border-zinc-600 dark:text-zinc-300 dark:hover:border-[var(--color-primary)] dark:hover:bg-[var(--color-primary)]/20"
-                                        @click="openRedundancySidebar('crypto')"
-                                    >
-                                        <Layers class="h-4 w-4" />
-                                        Redundância
-                                    </button>
-                                    <p v-if="(gateways_by_method.crypto || []).length === 0" class="text-xs text-zinc-500 dark:text-zinc-400">
-                                        <Link href="/integracoes?tab=gateways" class="text-[var(--color-primary)] hover:underline">Conectar gateway</Link>
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </section>
+                <!-- Métodos de pagamento: configurados globalmente em Integrações -->
 
                 <!-- Tipo de entrega -->
                 <section class="panel-table">
@@ -2599,27 +2186,6 @@ function submit() {
                         </aside>
                     </Transition>
                 </Teleport>
-
-                <GatewayRedundancySidebar
-                    :open="redundancySidebarOpen"
-                    :method="redundancySidebarMethod"
-                    :method-label="METHOD_LABELS[redundancySidebarMethod] || redundancySidebarMethod"
-                    :primary-slug="redundancySidebarMethod ? (form.payment_gateways[redundancySidebarMethod] || '') : ''"
-                    :gateways="gateways_by_method[redundancySidebarMethod] || []"
-                    :model-value="redundancySidebarMethod ? (form.payment_gateways[redundancySidebarMethod + '_redundancy'] || []) : []"
-                    @update:model-value="(val) => redundancySidebarMethod && (form.payment_gateways[redundancySidebarMethod + '_redundancy'] = val)"
-                    @save="(val) => { if (redundancySidebarMethod) { form.payment_gateways[redundancySidebarMethod + '_redundancy'] = val; submit(); } redundancySidebarOpen = false; }"
-                    @close="redundancySidebarOpen = false"
-                />
-
-                <PixParceladoRulesSidebar
-                    :open="pixParceladoRulesSidebarOpen"
-                    :product-id="produto.id"
-                    :price-brl="priceNum"
-                    v-model="form.pix_parcelado"
-                    @close="pixParceladoRulesSidebarOpen = false"
-                    @save="() => { pixParceladoRulesSidebarOpen = false; }"
-                />
 
                 <Teleport to="body">
                     <Transition

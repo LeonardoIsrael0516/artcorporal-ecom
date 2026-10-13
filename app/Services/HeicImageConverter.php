@@ -18,17 +18,31 @@ class HeicImageConverter
     /**
      * Validation rules that accept HEIC/HEIF (Laravel `image` rejects them).
      *
-     * @return list<string>
+     * @return list<\Closure|string>
      */
     public static function uploadRules(int $maxKb = 8192, bool $required = false): array
     {
-        $ext = implode(',', self::ACCEPTED_EXTENSIONS);
-
         return [
             $required ? 'required' : 'nullable',
             'file',
             'max:'.$maxKb,
-            'extensions:'.$ext,
+            function (string $attribute, mixed $value, \Closure $fail): void {
+                if (! $value instanceof UploadedFile) {
+                    return;
+                }
+
+                $ext = strtolower((string) ($value->getClientOriginalExtension() ?: pathinfo($value->getClientOriginalName(), PATHINFO_EXTENSION)));
+                $mime = strtolower((string) ($value->getMimeType() ?: ''));
+                $okExt = in_array($ext, self::ACCEPTED_EXTENSIONS, true);
+                $okMime = str_starts_with($mime, 'image/')
+                    || str_contains($mime, 'heic')
+                    || str_contains($mime, 'heif')
+                    || ($mime === 'application/octet-stream' && in_array($ext, ['heic', 'heif'], true));
+
+                if (! $okExt && ! $okMime) {
+                    $fail('A imagem deve ser JPG, PNG, WEBP, GIF ou HEIC.');
+                }
+            },
         ];
     }
 

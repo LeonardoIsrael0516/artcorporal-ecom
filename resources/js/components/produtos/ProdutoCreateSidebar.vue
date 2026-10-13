@@ -14,6 +14,7 @@ import {
 import Button from '@/components/ui/Button.vue';
 import Toggle from '@/components/ui/Toggle.vue';
 import PluginSlotHost from '@/components/plugins/PluginSlotHost.vue';
+import { normalizeImageFile } from '@/utils/normalizeImageFile';
 
 const props = defineProps({
     open: { type: Boolean, default: false },
@@ -104,9 +105,27 @@ function submit() {
     });
 }
 
-function onFileChange(e) {
-    const file = e.target.files?.[0];
-    form.image = file || null;
+const imageConverting = ref(false);
+const imageConvertError = ref('');
+
+async function onFileChange(e) {
+    const input = e.target;
+    const file = input?.files?.[0];
+    imageConvertError.value = '';
+    if (!file) {
+        form.image = null;
+        return;
+    }
+    imageConverting.value = true;
+    try {
+        form.image = await normalizeImageFile(file);
+    } catch (err) {
+        form.image = null;
+        imageConvertError.value = 'Não foi possível converter esta imagem HEIC. Tente JPG ou PNG.';
+        if (input) input.value = '';
+    } finally {
+        imageConverting.value = false;
+    }
 }
 
 watch(
@@ -318,9 +337,12 @@ watch(
                                 class="mt-1 block w-full text-sm text-zinc-600 file:mr-3 file:rounded-lg file:border-0 file:bg-[var(--color-primary)] file:px-4 file:py-2 file:text-white dark:text-zinc-400"
                                 @change="onFileChange"
                             />
-                            <p v-if="form.image" class="mt-1 text-sm text-zinc-500">
+                            <p v-if="imageConverting" class="mt-1 text-sm text-zinc-500">Convertendo HEIC…</p>
+                            <p v-else-if="form.image" class="mt-1 text-sm text-zinc-500">
                                 {{ form.image.name }}
                             </p>
+                            <p v-if="imageConvertError" class="mt-1 text-sm text-red-600 dark:text-red-400">{{ imageConvertError }}</p>
+                            <p v-if="form.errors.image" class="mt-1 text-sm text-red-600 dark:text-red-400">{{ form.errors.image }}</p>
                         </div>
                         <div class="flex items-center gap-2">
                             <Toggle v-model="form.is_active" label="Produto ativo" />

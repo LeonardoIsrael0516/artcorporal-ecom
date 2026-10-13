@@ -5,6 +5,7 @@ import LayoutInfoprodutor from '@/Layouts/LayoutInfoprodutor.vue';
 import Button from '@/components/ui/Button.vue';
 import Toggle from '@/components/ui/Toggle.vue';
 import { Pencil, Plus, Trash2, X } from 'lucide-vue-next';
+import { normalizeImageFile } from '@/utils/normalizeImageFile';
 
 defineOptions({ layout: LayoutInfoprodutor });
 
@@ -69,13 +70,34 @@ function closeModal() {
     if (imageInputRef.value) imageInputRef.value.value = '';
 }
 
-function onImageChange(event) {
-    const file = event.target.files?.[0] || null;
-    form.value.image = file;
+const imageConverting = ref(false);
+const imageConvertError = ref('');
+
+async function onImageChange(event) {
+    const input = event.target;
+    const file = input?.files?.[0] || null;
+    imageConvertError.value = '';
     if (imagePreview.value && imagePreview.value.startsWith('blob:')) {
         URL.revokeObjectURL(imagePreview.value);
     }
-    imagePreview.value = file ? URL.createObjectURL(file) : editing.value?.image_url || null;
+    if (!file) {
+        form.value.image = null;
+        imagePreview.value = editing.value?.image_url || null;
+        return;
+    }
+    imageConverting.value = true;
+    try {
+        const normalized = await normalizeImageFile(file);
+        form.value.image = normalized;
+        imagePreview.value = URL.createObjectURL(normalized);
+    } catch (err) {
+        form.value.image = null;
+        imagePreview.value = editing.value?.image_url || null;
+        imageConvertError.value = 'Não foi possível converter esta imagem HEIC. Tente JPG ou PNG.';
+        if (input) input.value = '';
+    } finally {
+        imageConverting.value = false;
+    }
 }
 
 function buildFormData() {
@@ -313,6 +335,7 @@ function yesNo(v) {
 
                     <div>
                         <label class="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300">Imagem</label>
+                        <p class="mb-1.5 text-xs text-zinc-500">JPG, PNG, WEBP ou HEIC (convertido automaticamente).</p>
                         <div class="flex items-center gap-4">
                             <img
                                 v-if="imagePreview"
@@ -324,10 +347,13 @@ function yesNo(v) {
                                 ref="imageInputRef"
                                 type="file"
                                 accept="image/*,.heic,.heif,image/heic,image/heif"
+                                :disabled="imageConverting"
                                 class="block w-full text-sm text-zinc-600 file:mr-3 file:rounded-lg file:border-0 file:bg-zinc-900 file:px-3 file:py-2 file:text-xs file:font-medium file:text-white"
                                 @change="onImageChange"
                             />
                         </div>
+                        <p v-if="imageConverting" class="mt-1.5 text-xs text-zinc-500">Convertendo HEIC…</p>
+                        <p v-if="imageConvertError" class="mt-1.5 text-sm text-red-600 dark:text-red-400">{{ imageConvertError }}</p>
                     </div>
 
                     <div class="space-y-3 rounded-xl border border-zinc-200 p-4 dark:border-zinc-700">
