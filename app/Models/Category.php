@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\StorageService;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -85,7 +86,7 @@ class Category extends Model
             return $this->image;
         }
 
-        return asset('storage/'.$this->image);
+        return (new StorageService($this->tenant_id ? (int) $this->tenant_id : null))->url($this->image);
     }
 
     /**

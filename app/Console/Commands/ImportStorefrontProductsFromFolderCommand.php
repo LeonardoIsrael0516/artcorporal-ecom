@@ -5,11 +5,11 @@ namespace App\Console\Commands;
 use App\Models\Category;
 use App\Models\Product;
 use App\Models\User;
+use App\Services\HeicImageConverter;
 use App\Services\StorageService;
 use Illuminate\Console\Command;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\File;
-use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Str;
 
 class ImportStorefrontProductsFromFolderCommand extends Command
@@ -56,10 +56,11 @@ class ImportStorefrontProductsFromFolderCommand extends Command
             $tenantId = (int) $admin->id;
         }
 
+        $heic = app(HeicImageConverter::class);
         $needsHeic = $this->folderHasHeic($root);
         $heicTool = null;
         if ($needsHeic && ! $dryRun) {
-            $heicTool = $this->resolveHeicConverter();
+            $heicTool = $heic->resolveTool();
             if ($heicTool === null) {
                 $this->error('Há arquivos HEIC, mas nenhuma ferramenta de conversão foi encontrada.');
                 $this->line('Instale ImageMagick com suporte HEIC (comando `magick` no PATH) e tente de novo.');
@@ -182,9 +183,9 @@ class ImportStorefrontProductsFromFolderCommand extends Command
                 $convertedTemp = null;
                 try {
                     $ext = strtolower(pathinfo($imagePath, PATHINFO_EXTENSION));
-                    if ($ext === 'heic') {
+                    if ($ext === 'heic' || $ext === 'heif') {
                         $convertedTemp = $tempDir.DIRECTORY_SEPARATOR.Str::uuid().'.jpg';
-                        if (! $this->convertHeicToJpeg($imagePath, $convertedTemp, $heicTool)) {
+                        if (! $heic->convertPathToJpeg($imagePath, $convertedTemp, $heicTool)) {
                             $this->error("  Falha ao converter HEIC: ".basename($imagePath));
                             $failed++;
                             continue;
@@ -207,7 +208,7 @@ class ImportStorefrontProductsFromFolderCommand extends Command
                         null,
                         true
                     );
-                    $storedPath = $storage->putFile('products', $uploaded);
+                    $storedPath = $storage->putImageFile('products', $uploaded);
 
                     $productName = $categoryName.' '.$n;
                     if ($existing && $force) {
@@ -320,92 +321,5 @@ class ImportStorefrontProductsFromFolderCommand extends Command
     private function imageStem(string $path): string
     {
         return pathinfo($path, PATHINFO_FILENAME);
-    }
-
-    private function resolveHeicConverter(): ?string
-    {
-        // Preferir `magick` (ImageMagick 7). Evitar `convert` no Windows (é o utilitário do sistema).
-        foreach (['magick', 'heif-convert'] as $bin) {
-            if ($this->binaryExists($bin)) {
-                return $bin;
-            }
-        }
-
-        if (PHP_OS_FAMILY !== 'Windows' && $this->binaryExists('convert') && $this->isImageMagickConvert()) {
-            return 'convert';
-        }
-
-        if (extension_loaded('imagick') && class_exists(\Imagick::class)) {
-            try {
-                $formats = array_map('strtoupper', \Imagick::queryFormats());
-                if (in_array('HEIC', $formats, true) || in_array('HEIF', $formats, true)) {
-                    return 'imagick';
-                }
-            } catch (\Throwable) {
-                // ignore
-            }
-        }
-
-        return null;
-    }
-
-    private function binaryExists(string $bin): bool
-    {
-        if (PHP_OS_FAMILY === 'Windows') {
-            $result = Process::run(['where', $bin]);
-        } else {
-            $result = Process::run(['which', $bin]);
-        }
-
-        return $result->successful() && trim($result->output()) !== '';
-    }
-
-    private function isImageMagickConvert(): bool
-    {
-        $result = Process::run(['convert', '-version']);
-        if (! $result->successful()) {
-            return false;
-        }
-
-        return str_contains(mb_strtolower($result->output().$result->errorOutput()), 'imagemagick');
-    }
-
-    private function convertHeicToJpeg(string $source, string $dest, ?string $tool): bool
-    {
-        if ($tool === null) {
-            return false;
-        }
-
-        try {
-            if ($tool === 'imagick') {
-                $img = new \Imagick($source);
-                $img->setImageFormat('jpeg');
-                $img->setImageCompressionQuality(85);
-                $img->writeImage($dest);
-                $img->clear();
-                $img->destroy();
-
-                return is_file($dest) && filesize($dest) > 0;
-            }
-
-            if ($tool === 'heif-convert') {
-                $result = Process::timeout(120)->run([$tool, $source, $dest]);
-
-                return $result->successful() && is_file($dest) && filesize($dest) > 0;
-            }
-
-            // ImageMagick: magick input.heic -quality 85 output.jpg
-            // convert: convert input.heic -quality 85 output.jpg
-            $cmd = $tool === 'magick'
-                ? [$tool, $source, '-quality', '85', $dest]
-                : [$tool, $source, '-quality', '85', $dest];
-            $result = Process::timeout(120)->run($cmd);
-
-            return $result->successful() && is_file($dest) && filesize($dest) > 0;
-        } catch (\Throwable $e) {
-            $this->warn('  Conversão HEIC falhou: '.$e->getMessage());
-
-            return false;
-        }
     }
 }

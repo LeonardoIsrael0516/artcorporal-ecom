@@ -4,9 +4,10 @@ namespace App\Http\Controllers;
 
 use App\Models\Category;
 use App\Models\User;
+use App\Services\HeicImageConverter;
+use App\Services\StorageService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -65,12 +66,12 @@ class CategoriesController extends Controller
             'is_featured_circle' => ['nullable', 'boolean'],
             'show_in_menu' => ['nullable', 'boolean'],
             'description' => ['nullable', 'string'],
-            'image' => ['nullable', 'image', 'max:4096'],
+            'image' => HeicImageConverter::uploadRules(8192),
         ]);
 
         $path = null;
         if ($request->hasFile('image')) {
-            $path = $request->file('image')->store('categories', 'public');
+            $path = app(StorageService::class)->putImageFile('categories', $request->file('image'));
         }
 
         Category::create([
@@ -103,14 +104,15 @@ class CategoriesController extends Controller
             'is_featured_circle' => ['nullable', 'boolean'],
             'show_in_menu' => ['nullable', 'boolean'],
             'description' => ['nullable', 'string'],
-            'image' => ['nullable', 'image', 'max:4096'],
+            'image' => HeicImageConverter::uploadRules(8192),
         ]);
 
         if ($request->hasFile('image')) {
-            if ($categoria->image) {
-                Storage::disk('public')->delete($categoria->image);
+            $storage = app(StorageService::class);
+            if ($categoria->image && $storage->exists($categoria->image)) {
+                $storage->delete($categoria->image);
             }
-            $categoria->image = $request->file('image')->store('categories', 'public');
+            $categoria->image = $storage->putImageFile('categories', $request->file('image'));
         }
 
         $categoria->fill([

@@ -25,7 +25,8 @@ COPY --from=php_extensions_builder /export-inis/ /usr/local/etc/php/conf.d/
 RUN apk add --no-cache \
     nginx supervisor curl \
     git unzip mysql-client \
-    libzip libpng oniguruma icu-libs icu-data-en libxml2
+    libzip libpng oniguruma icu-libs icu-data-en libxml2 \
+    imagemagick imagemagick-heic libheif
 
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 

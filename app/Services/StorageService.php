@@ -161,6 +161,23 @@ class StorageService
     }
 
     /**
+     * Store an image upload, converting HEIC/HEIF to JPEG when needed.
+     */
+    public function putImageFile(string $directory, UploadedFile $file, ?string $name = null): string
+    {
+        $converter = app(HeicImageConverter::class);
+        $normalized = $converter->normalizeUploadedImage($file);
+
+        try {
+            return $this->putFile($directory, $normalized, $name);
+        } finally {
+            if ($normalized !== $file) {
+                $converter->cleanup();
+            }
+        }
+    }
+
+    /**
      * Store file with putFileAs.
      */
     public function putFileAs(string $directory, UploadedFile $file, string $name): string

@@ -314,7 +314,7 @@ watch(
                             </p>
                             <input
                                 type="file"
-                                accept="image/*"
+                                accept="image/*,.heic,.heif,image/heic,image/heif"
                                 class="mt-1 block w-full text-sm text-zinc-600 file:mr-3 file:rounded-lg file:border-0 file:bg-[var(--color-primary)] file:px-4 file:py-2 file:text-white dark:text-zinc-400"
                                 @change="onFileChange"
                             />

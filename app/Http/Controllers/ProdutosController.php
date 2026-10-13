@@ -23,6 +23,7 @@ use App\Plugins\PluginHookBus;
 use App\Plugins\PluginProductTypeRegistry;
 use App\Plugins\PluginRegistry;
 use App\Services\CajuPayPixParceladoService;
+use App\Services\HeicImageConverter;
 use App\Services\StorageService;
 use App\Services\TeamAccessService;
 use App\Support\MoneyMinorUnits;
@@ -171,8 +172,8 @@ class ProdutosController extends Controller
             'category_ids.*' => ['integer', 'exists:categories,id'],
             'currency' => ['nullable', 'string', 'in:BRL,EUR,USD'],
             'is_active' => ['boolean'],
-            'image' => ['nullable', 'image', 'max:2048'],
-            'gallery.*' => ['nullable', 'image', 'max:4096'],
+            'image' => HeicImageConverter::uploadRules(8192),
+            'gallery.*' => HeicImageConverter::uploadRules(8192),
             'deliverable_link' => ['nullable', 'string', 'url', 'max:500'],
         ]);
         $validated['tenant_id'] = auth()->user()->tenant_id;
@@ -212,14 +213,14 @@ class ProdutosController extends Controller
         }
 
         if ($request->hasFile('image')) {
-            $path = app(StorageService::class)->putFile('products', $request->file('image'));
+            $path = app(StorageService::class)->putImageFile('products', $request->file('image'));
             $product->update(['image' => $path]);
         }
 
         if ($request->hasFile('gallery')) {
             $gallery = [];
             foreach ($request->file('gallery') as $file) {
-                $gallery[] = app(StorageService::class)->putFile('products/gallery', $file);
+                $gallery[] = app(StorageService::class)->putImageFile('products/gallery', $file);
             }
             $product->update(['gallery' => $gallery]);
         }
@@ -652,7 +653,7 @@ class ProdutosController extends Controller
             'combo_product_ids.*' => ['string', 'exists:products,id'],
             'currency' => ['nullable', 'string', 'in:BRL,EUR,USD'],
             'is_active' => ['boolean'],
-            'image' => ['nullable', 'image', 'max:2048'],
+            'image' => HeicImageConverter::uploadRules(8192),
             'conversion_pixels' => ['nullable', 'array'],
             'conversion_pixels.meta' => ['nullable', 'array'],
             'conversion_pixels.meta.enabled' => ['nullable', 'boolean'],
@@ -1173,7 +1174,7 @@ class ProdutosController extends Controller
             if ($oldImage && $storage->exists($oldImage)) {
                 $storage->delete($oldImage);
             }
-            $path = $storage->putFile('products', $request->file('image'));
+            $path = $storage->putImageFile('products', $request->file('image'));
             $produto->update(['image' => $path]);
         }
 

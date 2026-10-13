@@ -1820,7 +1820,7 @@ function submit() {
                                         <ImageIcon class="h-8 w-8 text-zinc-400 dark:text-zinc-500" />
                                         <span class="mt-1 text-center text-xs font-medium text-zinc-600 dark:text-zinc-400">{{ form.image?.name || 'Enviar' }}</span>
                                     </template>
-                                    <input type="file" accept="image/*" class="hidden" @change="onFileChange" />
+                                    <input type="file" accept="image/*,.heic,.heif,image/heic,image/heif" class="hidden" @change="onFileChange" />
                                 </label>
                             </div>
                         </div>

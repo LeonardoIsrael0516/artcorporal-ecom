@@ -323,7 +323,7 @@ function yesNo(v) {
                             <input
                                 ref="imageInputRef"
                                 type="file"
-                                accept="image/*"
+                                accept="image/*,.heic,.heif,image/heic,image/heif"
                                 class="block w-full text-sm text-zinc-600 file:mr-3 file:rounded-lg file:border-0 file:bg-zinc-900 file:px-3 file:py-2 file:text-xs file:font-medium file:text-white"
                                 @change="onImageChange"
                             />
