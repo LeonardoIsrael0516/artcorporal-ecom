@@ -12,7 +12,6 @@ import PluginSlotHost from '@/components/plugins/PluginSlotHost.vue';
 import PluginRenderZone from '@/components/plugins/PluginRenderZone.vue';
 import {
     LayoutDashboard,
-    Settings,
     Package,
     ArrowUpDown,
     ShoppingCart,
@@ -228,7 +227,6 @@ function formatSmsDelaySummary(stage) {
 
 const BASE_TABS = [
     { id: 'geral', label: 'Geral', icon: LayoutDashboard },
-    { id: 'configuracoes', label: 'Configurações', icon: Settings },
     { id: 'order_bump', label: 'Order Bump', icon: Package },
 ];
 
@@ -466,6 +464,15 @@ const form = useForm({
     height_cm: props.produto.height_cm ?? null,
     width_cm: props.produto.width_cm ?? null,
     length_cm: props.produto.length_cm ?? null,
+    wholesale_enabled: !!props.produto.wholesale_enabled,
+    wholesale_only: !!props.produto.wholesale_only,
+    wholesale_hide_from_retail: !!props.produto.wholesale_hide_from_retail,
+    wholesale_tiers: Array.isArray(props.produto.wholesale_tiers)
+        ? props.produto.wholesale_tiers.map((t) => ({
+            min_qty: Number(t.min_qty) || 2,
+            unit_price: Number(t.unit_price) || 0,
+        }))
+        : [],
     category_ids: Array.isArray(props.produto.category_ids) ? [...props.produto.category_ids] : [],
     combo_product_ids: Array.isArray(props.produto.combo_product_ids) ? [...props.produto.combo_product_ids] : [],
     base_interval: props.produto.base_interval ?? (props.produto.subscription_plans?.sort((a, b) => (a.position ?? 0) - (b.position ?? 0))[0]?.interval) ?? 'monthly',
@@ -1531,6 +1538,13 @@ function submit() {
         if (form.height_cm != null) fd.append('height_cm', form.height_cm);
         if (form.width_cm != null) fd.append('width_cm', form.width_cm);
         if (form.length_cm != null) fd.append('length_cm', form.length_cm);
+        fd.append('wholesale_enabled', form.wholesale_enabled ? '1' : '0');
+        fd.append('wholesale_only', form.wholesale_only ? '1' : '0');
+        fd.append('wholesale_hide_from_retail', form.wholesale_hide_from_retail ? '1' : '0');
+        (form.wholesale_tiers || []).forEach((tier, i) => {
+            fd.append(`wholesale_tiers[${i}][min_qty]`, String(tier.min_qty ?? 2));
+            fd.append(`wholesale_tiers[${i}][unit_price]`, String(tier.unit_price ?? 0));
+        });
         (form.category_ids || []).forEach((id) => fd.append('category_ids[]', id));
         (form.combo_product_ids || []).forEach((id) => fd.append('combo_product_ids[]', id));
         if (form.billing_type === 'subscription') {
@@ -1941,410 +1955,6 @@ function submit() {
                     :context="{ produto, product: produto }"
                 />
             </div>
-        </template>
-
-        <!-- Aba Configurações -->
-        <template v-if="currentTab === 'configuracoes'">
-            <form class="w-full space-y-8" @submit.prevent="submit">
-                <!-- Métodos de pagamento: configurados globalmente em Integrações -->
-
-                <!-- Tipo de entrega -->
-                <section class="panel-table">
-                    <div class="border-b border-zinc-200/80 bg-zinc-50/80 px-6 py-4 dark:border-zinc-700/80 dark:bg-zinc-800/50">
-                        <h2 class="text-base font-semibold text-zinc-900 dark:text-white">Tipo de entrega</h2>
-                        <p class="mt-0.5 text-sm text-zinc-500 dark:text-zinc-400">Como o cliente recebe o produto após a compra.</p>
-                    </div>
-                    <div class="p-6">
-                        <div class="grid gap-3 grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-                            <button
-                                v-for="t in productTypes"
-                                :key="t.value"
-                                type="button"
-                                :disabled="!t.available"
-                                :class="[
-                                    'flex items-start gap-3 rounded-xl border-2 p-4 text-left transition',
-                                    form.type === t.value
-                                        ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 dark:bg-[var(--color-primary)]/20'
-                                        : 'border-zinc-200 bg-zinc-50 hover:border-zinc-300 hover:bg-zinc-100 dark:border-zinc-600 dark:bg-zinc-800 dark:hover:border-zinc-500 dark:hover:bg-zinc-700',
-                                    !t.available && 'cursor-not-allowed opacity-60',
-                                ]"
-                                @click="t.available && (form.type = t.value)"
-                            >
-                                <component :is="typeIcons[t.value] || Package" class="mt-0.5 h-5 w-5 shrink-0 text-zinc-500 dark:text-zinc-400" />
-                                <div class="min-w-0 flex-1">
-                                    <span class="font-medium text-zinc-900 dark:text-white">{{ t.label }}</span>
-                                    <span v-if="!t.available" class="ml-1 text-xs text-zinc-500">(em breve)</span>
-                                </div>
-                                <button
-                                    v-if="t.available && t.value === 'link' && form.type === t.value"
-                                    type="button"
-                                    class="shrink-0 rounded-lg p-1.5 text-zinc-500 transition hover:bg-zinc-200 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-600 dark:hover:text-white"
-                                    title="Configurar link do entregável"
-                                    aria-label="Configurar link do entregável"
-                                    @click.stop="deliverableLinkSidebarOpen = true"
-                                >
-                                    <Settings class="h-4 w-4" aria-hidden="true" />
-                                </button>
-                                <button
-                                    v-if="t.available && t.value === 'area_membros' && form.type === t.value"
-                                    type="button"
-                                    class="shrink-0 rounded-lg p-1.5 text-zinc-500 transition hover:bg-zinc-200 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-600 dark:hover:text-white"
-                                    title="Abrir Member Builder"
-                                    aria-label="Abrir Member Builder"
-                                    @click.stop="goToMemberBuilder"
-                                >
-                                    <Settings class="h-4 w-4" aria-hidden="true" />
-                                </button>
-                            </button>
-                        </div>
-                        <p v-if="form.errors.type" class="mt-2 text-sm text-red-600 dark:text-red-400">{{ form.errors.type }}</p>
-                    </div>
-                </section>
-
-                <!-- Área de membros externa (Cademí) -->
-                <section
-                    v-if="form.type === 'area_membros_externa'"
-                    class="panel-table"
-                >
-                    <div class="border-b border-zinc-200/80 bg-zinc-50/80 px-6 py-4 dark:border-zinc-700/80 dark:bg-zinc-800/50">
-                        <h2 class="text-base font-semibold text-zinc-900 dark:text-white">Área de membros externa (Cademí)</h2>
-                        <p class="mt-0.5 text-sm text-zinc-500 dark:text-zinc-400">
-                            Se este produto for entregue via Cademí, configure aqui qual integração e qual TAG o aluno receberá após o pagamento.
-                        </p>
-                    </div>
-                    <div class="p-6 space-y-4">
-                        <div class="grid gap-4 sm:grid-cols-2">
-                            <div>
-                                <label class="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">Integração Cademí</label>
-                                <select
-                                    v-model="cademiConfig.integration_id"
-                                    class="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-[var(--color-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)] dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-                                >
-                                    <option value="">(desconectado)</option>
-                                    <option v-for="i in cademi_integrations" :key="i.id" :value="String(i.id)">
-                                        {{ i.name }}
-                                    </option>
-                                </select>
-                                <p v-if="cademi_integrations.length === 0" class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-                                    Nenhuma integração Cademí cadastrada. Vá em <Link href="/integracoes" class="text-[var(--color-primary)] hover:underline">/integracoes</Link> e crie uma.
-                                </p>
-                            </div>
-                            <div>
-                                <label class="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">Produto ID (Cademí)</label>
-                                <div class="space-y-2">
-                                    <div v-for="(pid, idx) in cademiConfig.cademi_produto_ids" :key="idx" class="flex gap-2">
-                                        <input
-                                            v-model="cademiConfig.cademi_produto_ids[idx]"
-                                            type="number"
-                                            min="1"
-                                            placeholder="Ex: 231"
-                                            class="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-[var(--color-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)] dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-                                        />
-                                        <Button type="button" variant="outline" :disabled="cademiConfig.cademi_produto_ids.length <= 1" @click="cademiConfig.cademi_produto_ids.splice(idx, 1)">
-                                            Remover
-                                        </Button>
-                                    </div>
-                                    <Button type="button" variant="outline" @click="cademiConfig.cademi_produto_ids.push('')">
-                                        Adicionar Produto ID
-                                    </Button>
-                                </div>
-                                <p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-                                    Obrigatório para conceder acesso na Cademí.
-                                </p>
-                            </div>
-
-                            <div>
-                                <label class="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">TAG ID (Cademí) (opcional)</label>
-                                <div class="space-y-2">
-                                    <div class="flex gap-2">
-                                        <select
-                                            v-model="cademiConfig.cademi_tag_id"
-                                            class="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-[var(--color-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)] dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-                                            :disabled="!cademiConfig.integration_id || cademiTagsLoading"
-                                        >
-                                            <option value="">Selecione uma TAG</option>
-                                            <option v-for="t in filteredCademiTags" :key="t.id" :value="String(t.id)">
-                                                {{ t.nome ? `${t.nome} (#${t.id})` : `#${t.id}` }}
-                                            </option>
-                                        </select>
-                                        <Button
-                                            type="button"
-                                            variant="outline"
-                                            :disabled="!cademiConfig.integration_id || cademiTagsLoading"
-                                            @click="loadCademiTags"
-                                        >
-                                            <Loader2 v-if="cademiTagsLoading" class="mr-2 h-4 w-4 animate-spin" />
-                                            Atualizar
-                                        </Button>
-                                    </div>
-
-                                    <input
-                                        v-model="cademiTagQuery"
-                                        type="text"
-                                        placeholder="Buscar TAG pelo nome…"
-                                        class="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-[var(--color-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)] dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-                                        :disabled="!cademiConfig.integration_id || cademiTagsLoading || (cademiTags || []).length === 0"
-                                    />
-
-                                    <input
-                                        v-model="cademiConfig.cademi_tag_id"
-                                        type="number"
-                                        min="1"
-                                        placeholder="Ou cole o TAG ID (ex: 472)"
-                                        class="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-[var(--color-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)] dark:border-zinc-600 dark:bg-zinc-800 dark:text-white"
-                                        :disabled="!cademiConfig.integration_id"
-                                    />
-
-                                    <p v-if="cademiTagsError" class="text-xs text-red-600 dark:text-red-400">{{ cademiTagsError }}</p>
-                                    <p v-else-if="cademiConfig.integration_id && !cademiTagsLoading && (cademiTags || []).length === 0" class="text-xs text-zinc-500 dark:text-zinc-400">
-                                        Nenhuma TAG retornada pela Cademí (ou integração ainda não carregada).
-                                    </p>
-                                </div>
-                                <p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-                                    Dica: selecione pelo nome (recomendado). Se necessário, cole o ID manualmente no campo acima.
-                                </p>
-                            </div>
-                        </div>
-
-                        <div class="flex items-end">
-                            <Button type="button" class="w-full" :disabled="cademiSaving" @click="saveCademiProductMapping">
-                                <Loader2 v-if="cademiSaving" class="mr-2 h-4 w-4 animate-spin" />
-                                Salvar configuração Cademí
-                            </Button>
-                        </div>
-
-                        <p v-if="cademiError" class="rounded-lg bg-red-100 px-3 py-2 text-sm text-red-700 dark:bg-red-900/30 dark:text-red-300">
-                            {{ cademiError }}
-                        </p>
-                    </div>
-                </section>
-
-                <!-- Sidebar: Link do entregável (só quando tipo Link) -->
-                <Teleport to="body">
-                    <Transition
-                        enter-active-class="transition-opacity duration-200"
-                        enter-from-class="opacity-0"
-                        enter-to-class="opacity-100"
-                        leave-active-class="transition-opacity duration-200"
-                        leave-from-class="opacity-100"
-                        leave-to-class="opacity-0"
-                    >
-                        <div
-                            v-if="deliverableLinkSidebarOpen"
-                            class="fixed inset-0 z-[100000] bg-black/30"
-                            aria-hidden="true"
-                            @click="deliverableLinkSidebarOpen = false"
-                        />
-                    </Transition>
-                    <Transition
-                        enter-active-class="transition-transform duration-300 ease-out"
-                        enter-from-class="translate-x-full"
-                        enter-to-class="translate-x-0"
-                        leave-active-class="transition-transform duration-300 ease-in"
-                        leave-from-class="translate-x-0"
-                        leave-to-class="translate-x-full"
-                    >
-                        <aside
-                            v-if="deliverableLinkSidebarOpen"
-                            class="fixed top-0 right-0 h-full w-full max-w-md bg-white dark:bg-zinc-900 shadow-2xl z-[100001] flex flex-col"
-                            role="dialog"
-                            aria-labelledby="deliverable-link-sidebar-title"
-                            @click.stop
-                        >
-                            <div class="flex shrink-0 items-center justify-between border-b border-zinc-200 px-4 py-3 dark:border-zinc-700">
-                                <div class="flex items-center gap-2">
-                                    <Settings class="h-5 w-5 text-zinc-500 dark:text-white" aria-hidden="true" />
-                                    <h2 id="deliverable-link-sidebar-title" class="text-lg font-semibold text-zinc-900 dark:text-white">Link do entregável</h2>
-                                </div>
-                                <button
-                                    type="button"
-                                    class="rounded-lg p-2 text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-white"
-                                    aria-label="Fechar"
-                                    @click="deliverableLinkSidebarOpen = false"
-                                >
-                                    <X class="h-5 w-5" />
-                                </button>
-                            </div>
-                            <div class="flex-1 overflow-y-auto p-4">
-                                <p class="mb-4 text-sm text-zinc-600 dark:text-zinc-400">
-                                    URL enviada por e-mail ao cliente após a compra. O link deve apontar para o conteúdo (página, arquivo, etc.).
-                                </p>
-                                <div>
-                                    <label class="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300">URL do entregável</label>
-                                    <input v-model="form.deliverable_link" type="url" placeholder="https://..." :class="inputClass" />
-                                    <p v-if="form.errors.deliverable_link" class="mt-1.5 text-sm text-red-600 dark:text-red-400">{{ form.errors.deliverable_link }}</p>
-                                </div>
-                            </div>
-                            <div class="shrink-0 border-t border-zinc-200 p-4 flex gap-2 dark:border-zinc-700">
-                                <Button type="button" class="flex-1" :disabled="form.processing" @click="submit(); deliverableLinkSidebarOpen = false">
-                                    Salvar
-                                </Button>
-                                <Button type="button" variant="outline" class="flex-1" @click="deliverableLinkSidebarOpen = false">
-                                    Fechar
-                                </Button>
-                            </div>
-                        </aside>
-                    </Transition>
-                </Teleport>
-
-                <Teleport to="body">
-                    <Transition
-                        enter-active-class="transition-opacity duration-200"
-                        enter-from-class="opacity-0"
-                        enter-to-class="opacity-100"
-                        leave-active-class="transition-opacity duration-200"
-                        leave-from-class="opacity-100"
-                        leave-to-class="opacity-0"
-                    >
-                        <div
-                            v-if="pagarmeBillingSidebarOpen"
-                            class="fixed inset-0 z-[100000] bg-black/30"
-                            aria-hidden="true"
-                            @click="pagarmeBillingSidebarOpen = false"
-                        />
-                    </Transition>
-                    <Transition
-                        enter-active-class="transition-transform duration-300 ease-out"
-                        enter-from-class="translate-x-full"
-                        enter-to-class="translate-x-0"
-                        leave-active-class="transition-transform duration-300 ease-in"
-                        leave-from-class="translate-x-0"
-                        leave-to-class="translate-x-full"
-                    >
-                        <aside
-                            v-if="pagarmeBillingSidebarOpen"
-                            class="fixed top-0 right-0 z-[100001] flex h-full w-full max-w-md flex-col bg-white shadow-2xl dark:bg-zinc-900"
-                            role="dialog"
-                            aria-labelledby="pagarme-billing-sidebar-title"
-                            @click.stop
-                        >
-                            <div class="flex shrink-0 items-center justify-between border-b border-zinc-200 px-4 py-3 dark:border-zinc-700">
-                                <div class="flex items-center gap-2">
-                                    <MapPin class="h-5 w-5 text-zinc-500 dark:text-white" aria-hidden="true" />
-                                    <h2 id="pagarme-billing-sidebar-title" class="text-lg font-semibold text-zinc-900 dark:text-white">
-                                        Cobrança — endereço (Pagar.me / Efí)
-                                    </h2>
-                                </div>
-                                <button
-                                    type="button"
-                                    class="rounded-lg p-2 text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-white"
-                                    aria-label="Fechar"
-                                    @click="pagarmeBillingSidebarOpen = false"
-                                >
-                                    <X class="h-5 w-5" />
-                                </button>
-                            </div>
-                            <div class="flex-1 space-y-4 overflow-y-auto p-4">
-                                <p class="text-sm text-zinc-600 dark:text-zinc-400">
-                                    Quando usar <strong>Pagar.me</strong> ou <strong>Efí</strong> no cartão e/ou no boleto, defina se o checkout pede o endereço do cliente ou usa o endereço da empresa (fatura/antifraude). No modo empresa, preencha o endereço abaixo (CEP com 8 dígitos, UF com 2 letras).
-                                </p>
-                                <div class="panel-card p-3 space-y-2">
-                                    <p class="text-xs font-medium text-zinc-700 dark:text-zinc-300">Modo no checkout</p>
-                                    <label class="flex cursor-pointer items-start gap-3 rounded-lg border border-zinc-200 bg-white p-3 dark:border-zinc-600 dark:bg-zinc-900/80">
-                                        <input v-model="form.pagarme_billing.mode" type="radio" class="mt-0.5" value="customer" />
-                                        <span>
-                                            <span class="text-sm font-medium text-zinc-800 dark:text-zinc-200">Solicitar endereço do cliente</span>
-                                            <span class="mt-0.5 block text-xs text-zinc-500 dark:text-zinc-400">O checkout exibe o bloco de CEP/endereço.</span>
-                                        </span>
-                                    </label>
-                                    <label class="flex cursor-pointer items-start gap-3 rounded-lg border border-zinc-200 bg-white p-3 dark:border-zinc-600 dark:bg-zinc-900/80">
-                                        <input v-model="form.pagarme_billing.mode" type="radio" class="mt-0.5" value="company" />
-                                        <span>
-                                            <span class="text-sm font-medium text-zinc-800 dark:text-zinc-200">Usar endereço da empresa</span>
-                                            <span class="mt-0.5 block text-xs text-zinc-500 dark:text-zinc-400">O checkout não pede endereço; usamos os dados abaixo na cobrança.</span>
-                                        </span>
-                                    </label>
-                                </div>
-                                <p v-if="form.errors['pagarme_billing.company_address']" class="text-sm text-red-600 dark:text-red-400">
-                                    {{ form.errors['pagarme_billing.company_address'] }}
-                                </p>
-                                <p class="text-xs font-medium text-zinc-700 dark:text-zinc-300">Endereço da empresa</p>
-                                <div>
-                                    <label class="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300">CEP</label>
-                                    <div class="flex gap-2">
-                                        <input
-                                            :value="form.pagarme_billing.company_address.zipcode"
-                                            type="text"
-                                            inputmode="numeric"
-                                            maxlength="9"
-                                            placeholder="00000-000"
-                                            :class="inputClass"
-                                            @input="onPagarmeCompanyCepInput"
-                                        />
-                                        <Button
-                                            type="button"
-                                            variant="outline"
-                                            :disabled="pagarmeCompanyCepLoading || (form.pagarme_billing.company_address.zipcode || '').replace(/\D/g, '').length < 8"
-                                            @click="fetchPagarmeCompanyCep"
-                                        >
-                                            <Loader2 v-if="pagarmeCompanyCepLoading" class="h-4 w-4 animate-spin" />
-                                            <span v-else>Buscar</span>
-                                        </Button>
-                                    </div>
-                                    <p v-if="pagarmeCompanyCepError" class="mt-1 text-xs text-amber-600 dark:text-amber-400">{{ pagarmeCompanyCepError }}</p>
-                                </div>
-                                <div>
-                                    <label class="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300">Rua</label>
-                                    <input v-model="form.pagarme_billing.company_address.street" type="text" :class="inputClass" />
-                                </div>
-                                <div class="grid grid-cols-2 gap-3">
-                                    <div>
-                                        <label class="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300">Número</label>
-                                        <input v-model="form.pagarme_billing.company_address.number" type="text" :class="inputClass" />
-                                    </div>
-                                    <div>
-                                        <label class="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300">UF</label>
-                                        <input
-                                            v-model="form.pagarme_billing.company_address.state"
-                                            type="text"
-                                            maxlength="2"
-                                            class="uppercase"
-                                            :class="inputClass"
-                                            @blur="form.pagarme_billing.company_address.state = (form.pagarme_billing.company_address.state || '').toUpperCase().slice(0, 2)"
-                                        />
-                                    </div>
-                                </div>
-                                <div>
-                                    <label class="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300">Bairro</label>
-                                    <input v-model="form.pagarme_billing.company_address.neighborhood" type="text" :class="inputClass" />
-                                </div>
-                                <div>
-                                    <label class="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300">Cidade</label>
-                                    <input v-model="form.pagarme_billing.company_address.city" type="text" :class="inputClass" />
-                                </div>
-                            </div>
-                            <div class="flex shrink-0 gap-2 border-t border-zinc-200 p-4 dark:border-zinc-700">
-                                <Button type="button" class="flex-1" :disabled="form.processing" @click="submit(); pagarmeBillingSidebarOpen = false">
-                                    Salvar
-                                </Button>
-                                <Button type="button" variant="outline" class="flex-1" @click="pagarmeBillingSidebarOpen = false">Fechar</Button>
-                            </div>
-                        </aside>
-                    </Transition>
-                </Teleport>
-
-                <!-- Pixels de conversão -->
-                <section class="panel-table">
-                    <div class="border-b border-zinc-200/80 bg-gradient-to-r from-zinc-50/90 to-zinc-100/50 px-6 py-5 dark:from-zinc-800/80 dark:to-zinc-800/50">
-                        <h2 class="text-base font-semibold text-zinc-900 dark:text-white">Pixels de conversão</h2>
-                        <p class="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-                            Pixels vinculados a este produto (configurados em Integrações).
-                        </p>
-                    </div>
-                    <div class="p-6">
-                        <ProductConversionPixelsInfo :integrations="product_pixel_integrations" />
-                    </div>
-                </section>
-                <div class="flex flex-wrap items-center gap-3">
-                    <Button type="submit" :disabled="form.processing">Salvar alterações</Button>
-                    <Link
-                        href="/produtos"
-                        class="inline-flex items-center rounded-xl border border-zinc-200 px-4 py-2.5 text-sm font-medium text-zinc-700 transition hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
-                    >
-                        Cancelar
-                    </Link>
-                </div>
-            </form>
         </template>
 
         <!-- Aba E-mail -->

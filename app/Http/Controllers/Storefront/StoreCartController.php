@@ -47,6 +47,7 @@ class StoreCartController extends Controller
         return [
             'storeTheme' => $theme,
             'menuCategories' => $this->catalog->serializeMenuTree($tenantId),
+            'hasWholesale' => $this->catalog->hasWholesaleProducts($tenantId),
             'cartCount' => (int) $cart->lines->sum('quantity'),
             'isPreview' => false,
         ];
@@ -63,6 +64,13 @@ class StoreCartController extends Controller
             $product = Product::find($line->product_id);
             $amount = (float) $line->unit_amount * (int) $line->quantity;
             $subtotal += $amount;
+            $meta = is_array($line->metadata) ? $line->metadata : [];
+            $retailUnit = isset($meta['retail_unit_amount'])
+                ? (float) $meta['retail_unit_amount']
+                : (float) ($product?->price ?? $line->unit_amount);
+            $savings = isset($meta['wholesale_savings'])
+                ? (float) $meta['wholesale_savings']
+                : max(0, ($retailUnit - (float) $line->unit_amount) * (int) $line->quantity);
             $lines[] = [
                 'id' => $line->id,
                 'product_id' => $line->product_id,
@@ -72,6 +80,13 @@ class StoreCartController extends Controller
                 'amount' => $amount,
                 'image_url' => $product?->galleryUrls()[0] ?? null,
                 'slug' => $product?->slug,
+                'min_qty' => $product?->minPurchaseQty() ?? 1,
+                'max_qty' => $product?->maxPurchaseQty() ?? 99,
+                'wholesale_enabled' => $product?->hasWholesale() ?? false,
+                'wholesale_applied' => (bool) ($meta['wholesale_applied'] ?? false),
+                'retail_unit_amount' => $retailUnit,
+                'wholesale_savings' => round($savings, 2),
+                'wholesale_tiers' => $product?->normalizedWholesaleTiers() ?? [],
             ];
         }
 
@@ -158,7 +173,7 @@ class StoreCartController extends Controller
     {
         $data = $request->validate([
             'product_id' => ['required', 'string'],
-            'quantity' => ['nullable', 'integer', 'min:1', 'max:99'],
+            'quantity' => ['nullable', 'integer', 'min:1', 'max:999'],
         ]);
         $tenantId = $this->tenantId();
         $product = Product::query()
@@ -167,7 +182,15 @@ class StoreCartController extends Controller
             ->where('is_active', true)
             ->firstOrFail();
 
-        $qty = (int) ($data['quantity'] ?? 1);
+        $qty = (int) ($data['quantity'] ?? $product->minPurchaseQty());
+        if ($qty < $product->minPurchaseQty()) {
+            $msg = 'Quantidade mínima'.($product->hasWholesale() && $product->wholesale_only ? ' para atacado' : '').': '.$product->minPurchaseQty().' unidades.';
+            if ($request->wantsJson()) {
+                return response()->json(['message' => $msg], 422);
+            }
+
+            return back()->with('error', $msg);
+        }
         if (! $product->inStock($qty)) {
             if ($request->wantsJson()) {
                 return response()->json(['message' => 'Estoque insuficiente.'], 422);
@@ -177,10 +200,18 @@ class StoreCartController extends Controller
         }
 
         $cart = $this->cartService->getOrCreate($request, $tenantId);
-        $this->cartService->addLine($cart, [
-            'product_id' => $product->id,
-            'quantity' => $qty,
-        ]);
+        try {
+            $this->cartService->addLine($cart, [
+                'product_id' => $product->id,
+                'quantity' => $qty,
+            ]);
+        } catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) {
+            if ($request->wantsJson()) {
+                return response()->json(['message' => $e->getMessage()], $e->getStatusCode());
+            }
+
+            return back()->with('error', $e->getMessage());
+        }
 
         if ($request->wantsJson()) {
             $cart->refresh()->load('lines');
@@ -197,10 +228,14 @@ class StoreCartController extends Controller
     public function updateLine(Request $request, int $lineId): RedirectResponse
     {
         $data = $request->validate([
-            'quantity' => ['required', 'integer', 'min:1', 'max:99'],
+            'quantity' => ['required', 'integer', 'min:1', 'max:999'],
         ]);
         $cart = $this->cartService->getOrCreate($request, $this->tenantId());
-        $this->cartService->updateQuantity($cart, $lineId, (int) $data['quantity']);
+        try {
+            $this->cartService->updateQuantity($cart, $lineId, (int) $data['quantity']);
+        } catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) {
+            return back()->with('error', $e->getMessage());
+        }
 
         return back();
     }

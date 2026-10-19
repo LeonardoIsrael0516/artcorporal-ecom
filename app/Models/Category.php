@@ -20,6 +20,7 @@ class Category extends Model
         'position',
         'is_active',
         'is_featured_circle',
+        'is_wholesale',
         'show_in_menu',
         'description',
     ];
@@ -29,6 +30,7 @@ class Category extends Model
         return [
             'is_active' => 'boolean',
             'is_featured_circle' => 'boolean',
+            'is_wholesale' => 'boolean',
             'show_in_menu' => 'boolean',
             'position' => 'integer',
         ];

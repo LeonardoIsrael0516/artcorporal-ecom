@@ -3,9 +3,9 @@
 namespace App\Services\Storefront;
 
 use App\Models\Category;
-use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Product;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
@@ -14,6 +14,27 @@ class StoreCatalogService
     public function tenantId(?int $fallback = null): ?int
     {
         return $fallback;
+    }
+
+    /**
+     * Exclui produtos só-atacado ocultos do varejo.
+     */
+    public function applyRetailVisibility(Builder $query): Builder
+    {
+        return $query->where(function (Builder $q) {
+            $q->where('wholesale_hide_from_retail', false)
+                ->orWhereNull('wholesale_hide_from_retail');
+        });
+    }
+
+    public function hasWholesaleProducts(?int $tenantId = null): bool
+    {
+        return Product::query()
+            ->where('type', Product::TYPE_FISICO)
+            ->where('is_active', true)
+            ->where('wholesale_enabled', true)
+            ->when($tenantId !== null, fn ($q) => $q->where('tenant_id', $tenantId))
+            ->exists();
     }
 
     /**
@@ -49,6 +70,8 @@ class StoreCatalogService
             $installments = 3;
         }
         $per = $installments > 0 ? round($price / $installments, 2) : $price;
+        $hasWholesale = $product->hasWholesale();
+        $tiers = $hasWholesale ? $product->normalizedWholesaleTiers() : [];
 
         return [
             'id' => $product->id,
@@ -70,11 +93,20 @@ class StoreCatalogService
             'technical_description' => $product->technical_description,
             'attention_notes' => $product->attention_notes,
             'sku' => $product->sku,
+            'wholesale_enabled' => $hasWholesale,
+            'wholesale_only' => $hasWholesale && (bool) $product->wholesale_only,
+            'wholesale_hide_from_retail' => (bool) ($product->wholesale_hide_from_retail ?? false),
+            'wholesale_tiers' => $tiers,
+            'wholesale_min_qty' => $hasWholesale ? $product->wholesaleMinQty() : 1,
+            'wholesale_from_price' => $hasWholesale ? $product->wholesaleFromPrice() : null,
+            'min_qty' => $product->minPurchaseQty(),
+            'max_qty' => $product->maxPurchaseQty(),
             'categories' => $product->relationLoaded('categories')
                 ? $product->categories->map(fn (Category $c) => [
                     'id' => $c->id,
                     'name' => $c->name,
                     'slug' => $c->slug,
+                    'is_wholesale' => (bool) $c->is_wholesale,
                 ])->values()->all()
                 : [],
         ];
@@ -92,6 +124,18 @@ class StoreCatalogService
             ->where('type', Product::TYPE_FISICO)
             ->where('is_active', true)
             ->when($tenantId !== null, fn ($q) => $q->where('tenant_id', $tenantId));
+
+        $isWholesaleCategory = false;
+        if ($source === 'category' && ! empty($props['category_id'])) {
+            $isWholesaleCategory = Category::query()
+                ->where('id', (int) $props['category_id'])
+                ->where('is_wholesale', true)
+                ->exists();
+        }
+
+        if ($source !== 'manual' && ! $isWholesaleCategory) {
+            $this->applyRetailVisibility($query);
+        }
 
         if ($source === 'manual' && ! empty($props['product_ids']) && is_array($props['product_ids'])) {
             $ids = array_values(array_filter($props['product_ids']));
@@ -153,6 +197,7 @@ class StoreCatalogService
             'name' => $c->name,
             'slug' => $c->slug,
             'image_url' => $c->imageUrl(),
+            'is_wholesale' => (bool) $c->is_wholesale,
         ])->values()->all();
     }
 
@@ -192,6 +237,7 @@ class StoreCatalogService
                 'id' => $c->id,
                 'name' => $c->name,
                 'slug' => $c->slug,
+                'is_wholesale' => (bool) $c->is_wholesale,
                 'children' => $map($c->children ?? collect()),
             ])->values()->all();
         };

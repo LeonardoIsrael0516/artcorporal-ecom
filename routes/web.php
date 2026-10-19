@@ -46,6 +46,7 @@ Route::get('/painel-sw.js', function () {
 Route::get('/', [\App\Http\Controllers\Storefront\StorefrontController::class, 'home'])->name('storefront.home');
 
 Route::get('/loja', [\App\Http\Controllers\Storefront\StorefrontController::class, 'shop'])->name('storefront.shop');
+Route::get('/atacado', [\App\Http\Controllers\Storefront\StorefrontController::class, 'wholesale'])->name('storefront.wholesale');
 Route::get('/categoria/{slug}', [\App\Http\Controllers\Storefront\StorefrontController::class, 'category'])->name('storefront.category');
 Route::get('/produto/{slug}', [\App\Http\Controllers\Storefront\StorefrontController::class, 'product'])->name('storefront.product');
 Route::get('/busca', [\App\Http\Controllers\Storefront\StorefrontController::class, 'search'])->name('storefront.search');

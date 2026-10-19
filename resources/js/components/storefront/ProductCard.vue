@@ -16,7 +16,17 @@ const emit = defineEmits(['buy']);
 
 const href = computed(() => `/produto/${props.product.slug}`);
 
+const hasWholesale = computed(() => !!props.product.wholesale_enabled);
+const fromPrice = computed(() =>
+    props.product.wholesale_from_price != null
+        ? Number(props.product.wholesale_from_price)
+        : null,
+);
+
 const formattedPrice = computed(() => formatMoney(props.product.price));
+const formattedFrom = computed(() =>
+    fromPrice.value != null ? formatMoney(fromPrice.value) : null,
+);
 const formattedPix = computed(() =>
     props.product.pix_price != null ? formatMoney(props.product.pix_price) : null,
 );
@@ -56,6 +66,12 @@ function onBuy() {
                 <span class="sf-wordmark sf-gold-text text-sm">{{ storeName }}</span>
                 <span class="h-px w-10 bg-[var(--sf-primary)]/60" />
             </div>
+            <span
+                v-if="hasWholesale"
+                class="absolute left-2 top-2 rounded-full bg-[var(--sf-secondary)] px-2.5 py-1 text-[10px] font-bold tracking-[0.15em] uppercase text-white shadow"
+            >
+                Atacado
+            </span>
         </Link>
 
         <div class="flex flex-1 flex-col gap-1 px-1 pt-4 pb-4 text-center">
@@ -67,14 +83,24 @@ function onBuy() {
             </Link>
 
             <p class="sf-serif mt-1 text-xl text-[var(--sf-secondary)]">
-                {{ formattedPrice }}
+                <template v-if="hasWholesale && formattedFrom">
+                    <span class="text-sm font-sans text-[var(--sf-text)]/50">a partir de</span>
+                    {{ formattedFrom }}
+                </template>
+                <template v-else>
+                    {{ formattedPrice }}
+                </template>
             </p>
 
-            <p v-if="formattedPix" class="text-xs font-semibold text-[var(--sf-primary)]">
+            <p v-if="hasWholesale && product.wholesale_min_qty > 1" class="text-[11px] text-[var(--sf-text)]/55">
+                Atacado a partir de {{ product.wholesale_min_qty }} un.
+            </p>
+
+            <p v-else-if="formattedPix" class="text-xs font-semibold text-[var(--sf-primary)]">
                 {{ formattedPix }} no Pix
             </p>
 
-            <p v-if="product.installment_text" class="text-xs text-[var(--sf-text)]/55">
+            <p v-if="!hasWholesale && product.installment_text" class="text-xs text-[var(--sf-text)]/55">
                 {{ product.installment_text }}
             </p>
 
@@ -84,7 +110,7 @@ function onBuy() {
                     class="sf-btn-gold w-full px-4 py-3.5 text-[11px] font-semibold tracking-[0.2em] uppercase"
                     @click="onBuy"
                 >
-                    Comprar
+                    {{ hasWholesale ? 'Ver atacado' : 'Comprar' }}
                 </button>
             </div>
         </div>

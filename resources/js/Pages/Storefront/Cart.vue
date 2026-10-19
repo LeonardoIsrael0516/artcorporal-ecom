@@ -25,8 +25,16 @@ function formatMoney(value) {
     return Number(value ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
+const totalSavings = computed(() =>
+    lines.value.reduce((sum, line) => sum + Number(line.wholesale_savings || 0), 0),
+);
+
 async function updateQty(line, quantity) {
-    const qty = Math.max(1, Number(quantity) || 1);
+    const min = Number(line.min_qty || 1);
+    const max = Number(line.max_qty || 999);
+    let qty = Number(quantity) || min;
+    if (qty < min) qty = min;
+    if (qty > max) qty = max;
     updating.value = true;
     try {
         await axios.patch(`/carrinho/lines/${line.id}`, { quantity: qty });
@@ -106,12 +114,29 @@ async function removeLine(line) {
                             </div>
                             <p class="text-sm font-semibold text-[var(--sf-secondary)]">
                                 {{ formatMoney(line.unit_amount) }}
+                                <span class="text-xs font-normal text-[var(--sf-text)]/50">un.</span>
+                            </p>
+                            <p
+                                v-if="line.wholesale_applied"
+                                class="text-xs font-medium text-emerald-700"
+                            >
+                                Preço atacado
+                                <span v-if="line.wholesale_savings > 0">
+                                    · economiza {{ formatMoney(line.wholesale_savings) }}
+                                </span>
+                            </p>
+                            <p
+                                v-else-if="line.wholesale_enabled && line.wholesale_tiers?.length"
+                                class="text-xs text-[var(--sf-text)]/55"
+                            >
+                                Atacado a partir de {{ line.wholesale_tiers[0].min_qty }} un.
                             </p>
                             <div class="flex items-center gap-2">
                                 <label class="text-xs text-[var(--sf-text)]/50">Qtd.</label>
                                 <input
                                     type="number"
-                                    min="1"
+                                    :min="line.min_qty || 1"
+                                    :max="line.max_qty || 999"
                                     :value="line.quantity"
                                     class="w-16 border border-[var(--sf-primary)]/25 bg-white px-2 py-1 text-sm outline-none focus:border-[var(--sf-primary)]"
                                     :disabled="updating"
@@ -129,7 +154,13 @@ async function removeLine(line) {
                     </Link>
                 </div>
 
-                <div class="lg:sticky lg:top-6">
+                <div class="lg:sticky lg:top-6 space-y-3">
+                    <p
+                        v-if="totalSavings > 0"
+                        class="border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800"
+                    >
+                        Você economiza {{ formatMoney(totalSavings) }} no atacado neste pedido.
+                    </p>
                     <OrderSummary
                         :lines="lines"
                         :subtotal="subtotal"

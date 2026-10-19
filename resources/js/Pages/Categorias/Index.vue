@@ -26,6 +26,7 @@ const emptyForm = () => ({
     position: 0,
     is_active: true,
     is_featured_circle: false,
+    is_wholesale: false,
     show_in_menu: true,
     description: '',
     image: null,
@@ -54,6 +55,7 @@ function openEdit(cat) {
         position: cat.position ?? 0,
         is_active: !!cat.is_active,
         is_featured_circle: !!cat.is_featured_circle,
+        is_wholesale: !!cat.is_wholesale,
         show_in_menu: !!cat.show_in_menu,
         description: cat.description || '',
         image: null,
@@ -111,6 +113,7 @@ function buildFormData() {
     fd.append('position', String(f.position ?? 0));
     fd.append('is_active', f.is_active ? '1' : '0');
     fd.append('is_featured_circle', f.is_featured_circle ? '1' : '0');
+    fd.append('is_wholesale', f.is_wholesale ? '1' : '0');
     fd.append('show_in_menu', f.show_in_menu ? '1' : '0');
     fd.append('description', f.description ?? '');
     if (f.image instanceof File) {
@@ -186,6 +189,7 @@ function yesNo(v) {
                             <th class="px-4 py-3 font-semibold">Ativa</th>
                             <th class="px-4 py-3 font-semibold">Menu</th>
                             <th class="px-4 py-3 font-semibold">Círculo</th>
+                            <th class="px-4 py-3 font-semibold">Atacado</th>
                             <th class="px-4 py-3 font-semibold">Produtos</th>
                             <th class="px-4 py-3 font-semibold text-right">Ações</th>
                         </tr>
@@ -213,6 +217,12 @@ function yesNo(v) {
                                     <div class="min-w-0">
                                         <p class="truncate font-medium text-zinc-900 dark:text-white">
                                             {{ cat.name }}
+                                            <span
+                                                v-if="cat.is_wholesale"
+                                                class="ml-1.5 inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800 dark:bg-amber-900/40 dark:text-amber-200"
+                                            >
+                                                Atacado
+                                            </span>
                                         </p>
                                         <p class="truncate text-xs text-zinc-500">
                                             <span v-if="cat.parent_name">{{ cat.parent_name }} / </span>
@@ -225,6 +235,7 @@ function yesNo(v) {
                             <td class="px-4 py-3 text-zinc-600 dark:text-zinc-300">{{ yesNo(cat.is_active) }}</td>
                             <td class="px-4 py-3 text-zinc-600 dark:text-zinc-300">{{ yesNo(cat.show_in_menu) }}</td>
                             <td class="px-4 py-3 text-zinc-600 dark:text-zinc-300">{{ yesNo(cat.is_featured_circle) }}</td>
+                            <td class="px-4 py-3 text-zinc-600 dark:text-zinc-300">{{ yesNo(cat.is_wholesale) }}</td>
                             <td class="px-4 py-3 text-zinc-600 dark:text-zinc-300">{{ cat.products_count ?? 0 }}</td>
                             <td class="px-4 py-3">
                                 <div class="flex items-center justify-end gap-2">
@@ -248,7 +259,7 @@ function yesNo(v) {
                             </td>
                         </tr>
                         <tr v-if="!categories?.length">
-                            <td colspan="7" class="px-4 py-10 text-center text-sm text-zinc-500">
+                            <td colspan="8" class="px-4 py-10 text-center text-sm text-zinc-500">
                                 Nenhuma categoria cadastrada ainda.
                             </td>
                         </tr>
@@ -359,6 +370,7 @@ function yesNo(v) {
                     <div class="space-y-3 rounded-xl border border-zinc-200 p-4 dark:border-zinc-700">
                         <Toggle v-model="form.is_active" label="Ativa" />
                         <Toggle v-model="form.is_featured_circle" label="Destacar em círculos na home" />
+                        <Toggle v-model="form.is_wholesale" label="Categoria de atacado" />
                         <Toggle v-model="form.show_in_menu" label="Exibir no menu" />
                     </div>
 

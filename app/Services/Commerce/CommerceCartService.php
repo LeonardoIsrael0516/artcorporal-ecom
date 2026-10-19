@@ -72,8 +72,38 @@ class CommerceCartService
                 ->firstOrFail();
         }
 
-        $qty = max(1, min(99, (int) ($payload['quantity'] ?? 1)));
-        $unit = PluginCommercePricing::unitAmountBrl($product, $offer, $plan);
+        $qty = $this->clampQuantity($product, (int) ($payload['quantity'] ?? 1));
+        $this->assertPurchaseAllowed($product, $qty);
+
+        $unit = PluginCommercePricing::unitAmountBrl($product, $offer, $plan, $qty);
+        $meta = is_array($payload['metadata'] ?? null) ? $payload['metadata'] : [];
+        $meta = array_merge($meta, PluginCommercePricing::wholesaleLineMeta($product, $qty, $unit));
+
+        // Se já existe linha do mesmo produto (sem oferta/plano), soma quantidade e recalcula.
+        if ($offer === null && $plan === null) {
+            $existing = $cart->lines()
+                ->where('product_id', $product->id)
+                ->whereNull('product_offer_id')
+                ->whereNull('subscription_plan_id')
+                ->first();
+
+            if ($existing) {
+                $newQty = $this->clampQuantity($product, (int) $existing->quantity + $qty);
+                $this->assertPurchaseAllowed($product, $newQty);
+                $unit = PluginCommercePricing::unitAmountBrl($product, null, null, $newQty);
+                $existing->update([
+                    'quantity' => $newQty,
+                    'unit_amount' => $unit,
+                    'metadata' => array_merge(
+                        is_array($existing->metadata) ? $existing->metadata : [],
+                        PluginCommercePricing::wholesaleLineMeta($product, $newQty, $unit)
+                    ),
+                ]);
+                event(new CartUpdated($cart->fresh('lines')));
+
+                return $existing->fresh();
+            }
+        }
 
         $line = CommerceCartLine::create([
             'commerce_cart_id' => $cart->id,
@@ -82,7 +112,7 @@ class CommerceCartService
             'subscription_plan_id' => $plan?->id,
             'quantity' => $qty,
             'unit_amount' => $unit,
-            'metadata' => is_array($payload['metadata'] ?? null) ? $payload['metadata'] : null,
+            'metadata' => $meta,
             'position' => (int) $cart->lines()->max('position') + 1,
         ]);
 
@@ -96,10 +126,71 @@ class CommerceCartService
     {
         $this->assertCartActive($cart);
         $line = $cart->lines()->where('id', $lineId)->firstOrFail();
-        $line->update(['quantity' => max(1, min(99, $quantity))]);
+        $product = Product::forTenant($cart->tenant_id)->where('id', $line->product_id)->firstOrFail();
+
+        $qty = $this->clampQuantity($product, $quantity);
+        $this->assertPurchaseAllowed($product, $qty);
+
+        $offer = $line->product_offer_id
+            ? ProductOffer::where('id', $line->product_offer_id)->where('product_id', $product->id)->first()
+            : null;
+        $plan = $line->subscription_plan_id
+            ? SubscriptionPlan::where('id', $line->subscription_plan_id)->where('product_id', $product->id)->first()
+            : null;
+
+        $unit = PluginCommercePricing::unitAmountBrl($product, $offer, $plan, $qty);
+        $meta = array_merge(
+            is_array($line->metadata) ? $line->metadata : [],
+            PluginCommercePricing::wholesaleLineMeta($product, $qty, $unit)
+        );
+
+        $line->update([
+            'quantity' => $qty,
+            'unit_amount' => $unit,
+            'metadata' => $meta,
+        ]);
         event(new CartUpdated($cart->fresh('lines')));
 
-        return $line;
+        return $line->fresh();
+    }
+
+    /**
+     * Recalcula unit_amount de todas as linhas (ex.: antes do checkout).
+     */
+    public function repriceLines(CommerceCart $cart): void
+    {
+        $cart->loadMissing('lines');
+        foreach ($cart->lines as $line) {
+            $product = Product::forTenant($cart->tenant_id)
+                ->where('id', $line->product_id)
+                ->where('is_active', true)
+                ->first();
+            if (! $product) {
+                continue;
+            }
+
+            $qty = $this->clampQuantity($product, (int) $line->quantity);
+            $this->assertPurchaseAllowed($product, $qty);
+
+            $offer = $line->product_offer_id
+                ? ProductOffer::where('id', $line->product_offer_id)->where('product_id', $product->id)->first()
+                : null;
+            $plan = $line->subscription_plan_id
+                ? SubscriptionPlan::where('id', $line->subscription_plan_id)->where('product_id', $product->id)->first()
+                : null;
+
+            $unit = PluginCommercePricing::unitAmountBrl($product, $offer, $plan, $qty);
+            $line->update([
+                'quantity' => $qty,
+                'unit_amount' => $unit,
+                'metadata' => array_merge(
+                    is_array($line->metadata) ? $line->metadata : [],
+                    PluginCommercePricing::wholesaleLineMeta($product, $qty, $unit)
+                ),
+            ]);
+        }
+        $cart->unsetRelation('lines');
+        $cart->load('lines');
     }
 
     public function removeLine(CommerceCart $cart, int $lineId): void
@@ -159,6 +250,25 @@ class CommerceCartService
             false,
             'lax'
         );
+    }
+
+    private function clampQuantity(Product $product, int $quantity): int
+    {
+        $min = $product->minPurchaseQty();
+        $max = $product->maxPurchaseQty();
+
+        return max($min, min($max, $quantity));
+    }
+
+    private function assertPurchaseAllowed(Product $product, int $qty): void
+    {
+        if ($product->hasWholesale() && (bool) $product->wholesale_only && $qty < $product->wholesaleMinQty()) {
+            abort(422, 'Quantidade mínima para atacado: '.$product->wholesaleMinQty().' unidades.');
+        }
+
+        if (! $product->inStock($qty)) {
+            abort(422, 'Estoque insuficiente.');
+        }
     }
 
     private function assertCartActive(CommerceCart $cart): void

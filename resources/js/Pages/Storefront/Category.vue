@@ -32,10 +32,14 @@ const pagination = computed(() => {
 
 async function onBuy(product) {
     if (!product?.id) return;
+    if (product.wholesale_enabled) {
+        window.location.href = `/produto/${product.slug}`;
+        return;
+    }
     try {
         await axios.post('/carrinho/add', {
             product_id: product.id,
-            quantity: 1,
+            quantity: product.min_qty || 1,
         });
         window.location.href = '/carrinho';
     } catch (_) {
@@ -56,13 +60,19 @@ async function onBuy(product) {
             </nav>
 
             <div class="mb-10 flex flex-col items-center text-center">
-                <p class="sf-eyebrow">Coleção</p>
+                <p class="sf-eyebrow">{{ category.is_wholesale ? 'Atacado' : 'Coleção' }}</p>
                 <h1 class="mt-2 text-4xl text-[var(--sf-secondary)] md:text-5xl">
                     {{ category.name }}
                 </h1>
                 <div class="sf-ornament mt-4 w-28" />
                 <p v-if="category.description" class="mt-4 max-w-2xl text-sm text-[var(--sf-text)]/70">
                     {{ category.description }}
+                </p>
+                <p
+                    v-else-if="category.is_wholesale"
+                    class="mt-4 max-w-2xl text-sm text-[var(--sf-text)]/70"
+                >
+                    Compre em quantidade e aproveite preços especiais por faixa.
                 </p>
             </div>
 

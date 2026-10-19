@@ -35,6 +35,10 @@ class CommerceCheckoutBridge
             abort(422, 'Carrinho vazio.');
         }
 
+        // Recalcula preços/faixas de atacado no momento do checkout.
+        app(CommerceCartService::class)->repriceLines($cart);
+        $cart->load('lines.product');
+
         $shippingQuote = is_array($cart->shipping_quote) ? $cart->shipping_quote : null;
         $shippingAddress = is_array($cart->shipping_address) ? $cart->shipping_address : null;
         if (! $shippingQuote || empty($shippingQuote['id'])) {
@@ -74,20 +78,24 @@ class CommerceCheckoutBridge
             } elseif ($lineCurrency !== $currency) {
                 abort(422, 'Itens com moedas diferentes não podem ser pagos juntos.');
             }
-            $lineTotal = (float) $line->unit_amount * (int) $line->quantity;
+            $qty = (int) $line->quantity;
+            $unitAmount = (float) $line->unit_amount;
+            $lineTotal = $unitAmount * $qty;
             $total += $lineTotal;
             if ($anchorProduct === null) {
                 $anchorProduct = $product;
             }
+            $wholesaleMeta = PluginCommercePricing::wholesaleLineMeta($product, $qty, $unitAmount);
             $lineSnapshots[] = [
                 'product_id' => $product->id,
                 'product_offer_id' => $offer?->id,
                 'subscription_plan_id' => $plan?->id,
-                'quantity' => (int) $line->quantity,
-                'unit_amount' => (float) $line->unit_amount,
+                'quantity' => $qty,
+                'unit_amount' => $unitAmount,
                 'amount' => $lineTotal,
                 'name' => $product->name,
                 'image_url' => $product->galleryUrls()[0] ?? null,
+                'wholesale' => $wholesaleMeta,
             ];
         }
 

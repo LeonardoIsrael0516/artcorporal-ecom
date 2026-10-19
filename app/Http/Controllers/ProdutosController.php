@@ -170,6 +170,12 @@ class ProdutosController extends Controller
             'length_cm' => ['nullable', 'numeric', 'min:0'],
             'category_ids' => ['nullable', 'array'],
             'category_ids.*' => ['integer', 'exists:categories,id'],
+            'wholesale_enabled' => ['nullable', 'boolean'],
+            'wholesale_only' => ['nullable', 'boolean'],
+            'wholesale_hide_from_retail' => ['nullable', 'boolean'],
+            'wholesale_tiers' => ['nullable', 'array'],
+            'wholesale_tiers.*.min_qty' => ['required_with:wholesale_tiers', 'integer', 'min:2'],
+            'wholesale_tiers.*.unit_price' => ['required_with:wholesale_tiers', 'numeric', 'min:0'],
             'currency' => ['nullable', 'string', 'in:BRL,EUR,USD'],
             'is_active' => ['boolean'],
             'image' => HeicImageConverter::uploadRules(8192),
@@ -182,6 +188,7 @@ class ProdutosController extends Controller
         $validated['is_active'] = $request->boolean('is_active', true);
         $validated['track_stock'] = $request->boolean('track_stock', true);
         $validated['stock'] = (int) ($validated['stock'] ?? 0);
+        $validated = $this->normalizeWholesaleInput($validated, $request);
         $categoryIds = $validated['category_ids'] ?? [];
         unset($validated['category_ids']);
 
@@ -647,6 +654,12 @@ class ProdutosController extends Controller
             'length_cm' => ['nullable', 'numeric', 'min:0'],
             'category_ids' => ['nullable', 'array'],
             'category_ids.*' => ['integer', 'exists:categories,id'],
+            'wholesale_enabled' => ['nullable', 'boolean'],
+            'wholesale_only' => ['nullable', 'boolean'],
+            'wholesale_hide_from_retail' => ['nullable', 'boolean'],
+            'wholesale_tiers' => ['nullable', 'array'],
+            'wholesale_tiers.*.min_qty' => ['required_with:wholesale_tiers', 'integer', 'min:2'],
+            'wholesale_tiers.*.unit_price' => ['required_with:wholesale_tiers', 'numeric', 'min:0'],
             'gallery' => ['nullable', 'array'],
             'gallery.*' => ['nullable', 'string'],
             'combo_product_ids' => ['nullable', 'array'],
@@ -949,6 +962,7 @@ class ProdutosController extends Controller
         if (array_key_exists('track_stock', $validated)) {
             $validated['track_stock'] = (bool) $validated['track_stock'];
         }
+        $validated = $this->normalizeWholesaleInput($validated, $request);
         $wasActive = (bool) $produto->is_active;
         $produto->update($validated);
         if (is_array($categoryIds)) {
@@ -1533,6 +1547,10 @@ class ProdutosController extends Controller
             'height_cm' => $p->height_cm !== null ? (float) $p->height_cm : null,
             'width_cm' => $p->width_cm !== null ? (float) $p->width_cm : null,
             'length_cm' => $p->length_cm !== null ? (float) $p->length_cm : null,
+            'wholesale_enabled' => (bool) ($p->wholesale_enabled ?? false),
+            'wholesale_only' => (bool) ($p->wholesale_only ?? false),
+            'wholesale_hide_from_retail' => (bool) ($p->wholesale_hide_from_retail ?? false),
+            'wholesale_tiers' => $p->normalizedWholesaleTiers(),
             'category_ids' => $p->relationLoaded('categories')
                 ? $p->categories->pluck('id')->all()
                 : $p->categories()->pluck('categories.id')->all(),
@@ -1547,6 +1565,96 @@ class ProdutosController extends Controller
             'conversion_pixels' => $p->conversion_pixels,
             'combo_product_ids' => $p->combo_product_ids ?? [],
         ];
+    }
+
+    /**
+     * Normaliza e valida faixas de atacado. Campos só persistem em produtos físicos.
+     *
+     * @param  array<string, mixed>  $validated
+     * @return array<string, mixed>
+     */
+    private function normalizeWholesaleInput(array $validated, Request $request): array
+    {
+        $isPhysical = ($validated['type'] ?? '') === Product::TYPE_FISICO;
+        if (! $isPhysical) {
+            $validated['wholesale_enabled'] = false;
+            $validated['wholesale_only'] = false;
+            $validated['wholesale_hide_from_retail'] = false;
+            $validated['wholesale_tiers'] = null;
+
+            return $validated;
+        }
+
+        $enabled = $request->boolean('wholesale_enabled');
+        $only = $request->boolean('wholesale_only');
+        $hide = $request->boolean('wholesale_hide_from_retail');
+        $retailPrice = round((float) ($validated['price'] ?? 0), 2);
+
+        $rawTiers = $validated['wholesale_tiers'] ?? [];
+        if (is_string($rawTiers)) {
+            $decoded = json_decode($rawTiers, true);
+            $rawTiers = is_array($decoded) ? $decoded : [];
+        }
+        if (! is_array($rawTiers)) {
+            $rawTiers = [];
+        }
+
+        $tiers = [];
+        foreach ($rawTiers as $tier) {
+            if (! is_array($tier)) {
+                continue;
+            }
+            $minQty = (int) ($tier['min_qty'] ?? 0);
+            $unitPrice = round((float) ($tier['unit_price'] ?? 0), 2);
+            if ($minQty < 2) {
+                continue;
+            }
+            $tiers[$minQty] = [
+                'min_qty' => $minQty,
+                'unit_price' => $unitPrice,
+            ];
+        }
+        ksort($tiers);
+        $tiers = array_values($tiers);
+
+        if ($enabled) {
+            if ($tiers === []) {
+                throw ValidationException::withMessages([
+                    'wholesale_tiers' => ['Informe ao menos uma faixa de atacado (quantidade mínima e preço unitário).'],
+                ]);
+            }
+            $prevPrice = null;
+            foreach ($tiers as $tier) {
+                if ($tier['unit_price'] >= $retailPrice && $retailPrice > 0) {
+                    throw ValidationException::withMessages([
+                        'wholesale_tiers' => ['O preço de cada faixa de atacado deve ser menor que o preço de varejo.'],
+                    ]);
+                }
+                if ($prevPrice !== null && $tier['unit_price'] > $prevPrice) {
+                    throw ValidationException::withMessages([
+                        'wholesale_tiers' => ['O preço unitário não pode aumentar em faixas de quantidade maior.'],
+                    ]);
+                }
+                $prevPrice = $tier['unit_price'];
+            }
+        } else {
+            $tiers = [];
+            $only = false;
+            $hide = false;
+        }
+
+        if ($hide && ! $enabled) {
+            throw ValidationException::withMessages([
+                'wholesale_hide_from_retail' => ['Ative o atacado para ocultar o produto do varejo.'],
+            ]);
+        }
+
+        $validated['wholesale_enabled'] = $enabled;
+        $validated['wholesale_only'] = $enabled ? $only : false;
+        $validated['wholesale_hide_from_retail'] = $enabled ? $hide : false;
+        $validated['wholesale_tiers'] = $enabled ? $tiers : null;
+
+        return $validated;
     }
 
     /**
@@ -1852,3 +1960,4 @@ class ProdutosController extends Controller
         return PluginProductTypeRegistry::allowedTypeValues(self::TYPES);
     }
 }
+

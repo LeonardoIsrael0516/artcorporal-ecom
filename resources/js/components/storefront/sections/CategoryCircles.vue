@@ -60,6 +60,12 @@ const title = computed(() => props.section?.title ?? props.section?.props?.title
                 <span class="text-[11px] font-medium tracking-[0.12em] uppercase text-[var(--sf-text)] transition group-hover:text-[var(--sf-primary)]">
                     {{ cat.name }}
                 </span>
+                <span
+                    v-if="cat.is_wholesale"
+                    class="text-[9px] font-bold tracking-[0.15em] uppercase text-[var(--sf-primary)]"
+                >
+                    Atacado
+                </span>
             </Link>
         </div>
     </section>

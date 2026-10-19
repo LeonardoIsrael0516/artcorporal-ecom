@@ -41,6 +41,10 @@ class Product extends Model
         'price',
         'compare_at_price',
         'pix_discount_percent',
+        'wholesale_enabled',
+        'wholesale_only',
+        'wholesale_hide_from_retail',
+        'wholesale_tiers',
         'stock',
         'track_stock',
         'weight_g',
@@ -61,6 +65,10 @@ class Product extends Model
             'price' => 'decimal:2',
             'compare_at_price' => 'decimal:2',
             'pix_discount_percent' => 'decimal:2',
+            'wholesale_enabled' => 'boolean',
+            'wholesale_only' => 'boolean',
+            'wholesale_hide_from_retail' => 'boolean',
+            'wholesale_tiers' => 'array',
             'height_cm' => 'decimal:2',
             'width_cm' => 'decimal:2',
             'length_cm' => 'decimal:2',
@@ -946,6 +954,125 @@ class Product extends Model
     public function isPhysical(): bool
     {
         return $this->type === self::TYPE_FISICO;
+    }
+
+    public function hasWholesale(): bool
+    {
+        return $this->isPhysical()
+            && (bool) $this->wholesale_enabled
+            && $this->normalizedWholesaleTiers() !== [];
+    }
+
+    /**
+     * Faixas normalizadas: ordenadas por min_qty asc, sem duplicatas.
+     *
+     * @return list<array{min_qty: int, unit_price: float}>
+     */
+    public function normalizedWholesaleTiers(): array
+    {
+        if (! $this->isPhysical() || ! (bool) $this->wholesale_enabled) {
+            return [];
+        }
+
+        $raw = $this->wholesale_tiers;
+        if (! is_array($raw) || $raw === []) {
+            return [];
+        }
+
+        $tiers = [];
+        foreach ($raw as $tier) {
+            if (! is_array($tier)) {
+                continue;
+            }
+            $minQty = (int) ($tier['min_qty'] ?? 0);
+            if ($minQty < 2) {
+                continue;
+            }
+            $tiers[$minQty] = [
+                'min_qty' => $minQty,
+                'unit_price' => round((float) ($tier['unit_price'] ?? 0), 2),
+            ];
+        }
+
+        ksort($tiers);
+
+        return array_values($tiers);
+    }
+
+    public function wholesaleMinQty(): int
+    {
+        $tiers = $this->normalizedWholesaleTiers();
+        if ($tiers === []) {
+            return 1;
+        }
+
+        return (int) $tiers[0]['min_qty'];
+    }
+
+    public function wholesaleFromPrice(): ?float
+    {
+        $tiers = $this->normalizedWholesaleTiers();
+        if ($tiers === []) {
+            return null;
+        }
+
+        $prices = array_column($tiers, 'unit_price');
+
+        return round((float) min($prices), 2);
+    }
+
+    /**
+     * Faixa aplicável à quantidade (maior min_qty <= qty), ou null.
+     *
+     * @return array{min_qty: int, unit_price: float}|null
+     */
+    public function wholesaleTierForQty(int $qty): ?array
+    {
+        $tiers = $this->normalizedWholesaleTiers();
+        if ($tiers === []) {
+            return null;
+        }
+
+        $matched = null;
+        foreach ($tiers as $tier) {
+            if ($qty >= (int) $tier['min_qty']) {
+                $matched = $tier;
+            }
+        }
+
+        return $matched;
+    }
+
+    /**
+     * Preço unitário efetivo considerando faixas de atacado.
+     */
+    public function wholesaleUnitPrice(int $qty): float
+    {
+        $retail = round((float) ($this->price ?? 0), 2);
+        if (! $this->hasWholesale()) {
+            return $retail;
+        }
+
+        $tier = $this->wholesaleTierForQty($qty);
+        if ($tier === null) {
+            return $retail;
+        }
+
+        return round((float) $tier['unit_price'], 2);
+    }
+
+    public function maxPurchaseQty(): int
+    {
+        return $this->hasWholesale() ? 999 : 99;
+    }
+
+    public function minPurchaseQty(): int
+    {
+        if ($this->hasWholesale() && (bool) $this->wholesale_only) {
+            return $this->wholesaleMinQty();
+        }
+
+        return 1;
     }
 
     public function pixPrice(): float

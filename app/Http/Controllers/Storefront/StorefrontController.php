@@ -49,6 +49,7 @@ class StorefrontController extends Controller
         return [
             'storeTheme' => $theme,
             'menuCategories' => $this->catalog->serializeMenuTree($tenantId),
+            'hasWholesale' => $this->catalog->hasWholesaleProducts($tenantId),
             'cartCount' => $cartCount,
             'isPreview' => $request->boolean('preview'),
         ];
@@ -69,18 +70,48 @@ class StorefrontController extends Controller
     public function shop(Request $request): Response
     {
         $tenantId = $this->storeTenantId();
+        $query = Product::query()
+            ->where('type', Product::TYPE_FISICO)
+            ->where('is_active', true)
+            ->when($tenantId, fn ($q) => $q->where('tenant_id', $tenantId));
+        $this->catalog->applyRetailVisibility($query);
+
+        $products = $query
+            ->orderByDesc('created_at')
+            ->paginate(24)
+            ->through(fn (Product $p) => $this->catalog->productCard($p));
+
+        return Inertia::render('Storefront/Category', array_merge($this->sharedStoreProps($request), [
+            'category' => ['name' => 'Loja', 'slug' => 'loja', 'description' => null, 'is_wholesale' => false],
+            'products' => $products,
+            'breadcrumbs' => [['label' => 'Início', 'href' => '/'], ['label' => 'Loja', 'href' => '/loja']],
+        ]));
+    }
+
+    public function wholesale(Request $request): Response
+    {
+        $tenantId = $this->storeTenantId();
         $products = Product::query()
             ->where('type', Product::TYPE_FISICO)
             ->where('is_active', true)
+            ->where('wholesale_enabled', true)
             ->when($tenantId, fn ($q) => $q->where('tenant_id', $tenantId))
             ->orderByDesc('created_at')
             ->paginate(24)
             ->through(fn (Product $p) => $this->catalog->productCard($p));
 
         return Inertia::render('Storefront/Category', array_merge($this->sharedStoreProps($request), [
-            'category' => ['name' => 'Loja', 'slug' => 'loja', 'description' => null],
+            'category' => [
+                'name' => 'Atacado',
+                'slug' => 'atacado',
+                'description' => 'Compre em quantidade e aproveite preços especiais por faixa.',
+                'is_wholesale' => true,
+            ],
             'products' => $products,
-            'breadcrumbs' => [['label' => 'Início', 'href' => '/'], ['label' => 'Loja', 'href' => '/loja']],
+            'breadcrumbs' => [
+                ['label' => 'Início', 'href' => '/'],
+                ['label' => 'Atacado', 'href' => '/atacado'],
+            ],
         ]));
     }
 
@@ -93,10 +124,17 @@ class StorefrontController extends Controller
             ->when($tenantId, fn ($q) => $q->where('tenant_id', $tenantId))
             ->firstOrFail();
 
-        $products = Product::query()
+        $query = Product::query()
             ->where('type', Product::TYPE_FISICO)
             ->where('is_active', true)
             ->whereHas('categories', fn ($q) => $q->where('categories.id', $category->id))
+            ->when($tenantId, fn ($q) => $q->where('tenant_id', $tenantId));
+
+        if (! $category->is_wholesale) {
+            $this->catalog->applyRetailVisibility($query);
+        }
+
+        $products = $query
             ->orderByDesc('created_at')
             ->paginate(24)
             ->through(fn (Product $p) => $this->catalog->productCard($p));
@@ -107,6 +145,7 @@ class StorefrontController extends Controller
                 'name' => $category->name,
                 'slug' => $category->slug,
                 'description' => $category->description,
+                'is_wholesale' => (bool) $category->is_wholesale,
             ],
             'products' => $products,
             'breadcrumbs' => [
@@ -127,14 +166,16 @@ class StorefrontController extends Controller
             ->when($tenantId, fn ($q) => $q->where('tenant_id', $tenantId))
             ->firstOrFail();
 
-        $related = Product::query()
+        $relatedQuery = Product::query()
             ->where('type', Product::TYPE_FISICO)
             ->where('is_active', true)
             ->where('id', '!=', $product->id)
             ->when($tenantId, fn ($q) => $q->where('tenant_id', $tenantId))
             ->when($product->categories->isNotEmpty(), function ($q) use ($product) {
                 $q->whereHas('categories', fn ($cq) => $cq->whereIn('categories.id', $product->categories->pluck('id')));
-            })
+            });
+        $this->catalog->applyRetailVisibility($relatedQuery);
+        $related = $relatedQuery
             ->limit(8)
             ->get()
             ->map(fn (Product $p) => $this->catalog->productCard($p));
@@ -156,7 +197,7 @@ class StorefrontController extends Controller
     {
         $tenantId = $this->storeTenantId();
         $q = trim((string) $request->query('q', ''));
-        $products = Product::query()
+        $query = Product::query()
             ->where('type', Product::TYPE_FISICO)
             ->where('is_active', true)
             ->when($tenantId, fn ($q2) => $q2->where('tenant_id', $tenantId))
@@ -164,7 +205,10 @@ class StorefrontController extends Controller
                 $w->where('name', 'like', "%{$q}%")
                     ->orWhere('sku', 'like', "%{$q}%")
                     ->orWhere('description', 'like', "%{$q}%");
-            }))
+            }));
+        $this->catalog->applyRetailVisibility($query);
+
+        $products = $query
             ->orderByDesc('created_at')
             ->paginate(24)
             ->appends(['q' => $q])

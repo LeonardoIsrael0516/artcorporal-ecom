@@ -19,6 +19,7 @@ const storeTheme = computed(() => {
 
 const cartCount = computed(() => Number(page.props.cartCount ?? 0));
 const menuCategories = computed(() => page.props.menuCategories || []);
+const hasWholesale = computed(() => !!page.props.hasWholesale);
 const authUser = computed(() => page.props.auth?.user || null);
 
 const brand = computed(() => storeTheme.value.brand || {});
@@ -281,6 +282,14 @@ onUnmounted(() => {
             <!-- Desktop nav -->
             <nav class="hidden border-t border-[var(--sf-primary)]/20 md:block">
                 <ul class="mx-auto flex max-w-[1360px] flex-wrap items-center justify-center gap-1 px-4 md:px-8">
+                    <li v-if="hasWholesale">
+                        <Link
+                            href="/atacado"
+                            class="sf-nav-link inline-flex items-center gap-1.5 px-4 py-3 text-[11px] font-semibold tracking-[0.2em] uppercase text-[var(--sf-accent-light)] transition hover:opacity-90"
+                        >
+                            Atacado
+                        </Link>
+                    </li>
                     <li
                         v-for="cat in menuCategories"
                         :key="cat.id || cat.slug || cat.name"
@@ -293,6 +302,12 @@ onUnmounted(() => {
                             class="sf-nav-link inline-flex items-center gap-1 px-4 py-3 text-[11px] font-medium tracking-[0.2em] uppercase transition hover:text-[var(--sf-accent-light)]"
                         >
                             {{ cat.name }}
+                            <span
+                                v-if="cat.is_wholesale"
+                                class="rounded-full bg-[var(--sf-accent-light)]/20 px-1.5 py-0.5 text-[9px] font-bold tracking-wider text-[var(--sf-accent-light)]"
+                            >
+                                AT
+                            </span>
                             <span v-if="cat.children?.length" class="text-[9px] opacity-70">▾</span>
                         </Link>
                         <ul
@@ -324,10 +339,18 @@ onUnmounted(() => {
                     <button type="submit" class="sf-btn-gold sf-btn-inset px-4 text-[11px] font-semibold tracking-widest uppercase">OK</button>
                 </form>
                 <Link :href="accountHref" class="mb-3 block text-sm font-medium text-[var(--sf-accent-light)]">Minha Conta</Link>
+                <Link
+                    v-if="hasWholesale"
+                    href="/atacado"
+                    class="mb-2 block py-2 text-xs font-semibold tracking-[0.2em] uppercase text-[var(--sf-accent-light)]"
+                >
+                    Atacado
+                </Link>
                 <ul class="space-y-1">
                     <li v-for="cat in menuCategories" :key="cat.id || cat.slug">
                         <Link :href="`/categoria/${cat.slug}`" class="block py-2 text-xs font-medium tracking-[0.2em] uppercase">
                             {{ cat.name }}
+                            <span v-if="cat.is_wholesale" class="ml-1 text-[9px] text-[var(--sf-accent-light)]">ATACADO</span>
                         </Link>
                         <ul v-if="cat.children?.length" class="mb-2 ml-3 border-l border-[var(--sf-primary)]/30 pl-3">
                             <li v-for="child in cat.children" :key="child.slug">
